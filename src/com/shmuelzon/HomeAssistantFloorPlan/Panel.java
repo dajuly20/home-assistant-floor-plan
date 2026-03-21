@@ -576,9 +576,14 @@ public class Panel extends JPanel implements DialogView {
                         EventQueue.invokeLater(() -> {
                             fetchEntitiesButton.setEnabled(true);
                             fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
+                            JList<String> list = new JList<>(entities.toArray(new String[0]));
+                            list.setVisibleRowCount(20);
+                            JScrollPane scroll = new JScrollPane(list);
+                            scroll.setPreferredSize(new java.awt.Dimension(400, 400));
                             JOptionPane.showMessageDialog(Panel.this,
-                                String.join("\n", entities),
-                                resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesDialog.title"),
+                                scroll,
+                                resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesDialog.title")
+                                    + " (" + entities.size() + ")",
                                 JOptionPane.INFORMATION_MESSAGE);
                         });
                     } catch (Exception ex) {
