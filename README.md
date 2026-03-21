@@ -319,6 +319,32 @@ When using **Room Overlay** light mixing mode:
 * Use a dark background for the 3D view (can be made transparent later in an image editor)
 * Close all doors between individually lit rooms
 
+## Home Assistant Connection
+
+The plugin can connect to your Home Assistant instance to fetch a list of all available entities. This lets you look up entity IDs directly from the plugin without switching to HA.
+
+### Creating a Long-Lived Access Token
+
+1. Open Home Assistant in your browser
+2. Click on your **profile icon** in the bottom-left corner (or go to **Settings → People → Your profile**)
+3. Scroll down to the **"Long-lived access tokens"** section
+4. Click **"Create token"**
+5. Enter a name, e.g. `SweetHome3D Plugin`, and confirm
+6. **Copy the token immediately** — it will only be shown once
+
+### Configuring the Plugin
+
+In the plugin window (**Tools → Home Assistant Floor Plan**):
+
+* **HA URL** — The address of your HA instance, e.g. `http://homeassistant.local:8123` or `http://192.168.1.100:8123`
+* **HA API Token** — Paste the long-lived access token you just created
+* Click **"Fetch entities"** to retrieve all available entity IDs from your HA instance
+
+The entity list appears in a dialog — use it as a reference when naming furniture pieces in Sweet Home 3D.
+
+> [!NOTE]
+> The token is saved in your SweetHome3D project file. Do not share your `.sh3d` project file publicly if it contains a token.
+
 ## Frequently Asked Questions
 
 * **Where should I copy the generated files?**
