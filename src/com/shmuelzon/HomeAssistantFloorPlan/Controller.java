@@ -16,8 +16,17 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.awt.Desktop;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -289,6 +298,95 @@ public class Controller {
 
         Collections.sort(entityIds);
         return entityIds;
+    }
+
+    public interface OAuthCallback {
+        void onSuccess(String accessToken);
+        void onError(String message);
+    }
+
+    public void startOAuthFlow(OAuthCallback callback) throws IOException, URISyntaxException {
+        if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
+            throw new IOException("Opening a browser is not supported on this system");
+
+        // Start local server on a random free port
+        ServerSocket serverSocket = new ServerSocket(0);
+        int port = serverSocket.getLocalPort();
+        String clientId = "http://localhost:" + port + "/";
+        String redirectUri = clientId;
+        String baseUrl = haUrl.replaceAll("/+$", "");
+        String authUrl = baseUrl + "/auth/authorize?response_type=code&client_id="
+            + clientId + "&redirect_uri=" + redirectUri;
+
+        // Open browser
+        Desktop.getDesktop().browse(new URI(authUrl));
+
+        // Wait for callback in background thread
+        new Thread(() -> {
+            try {
+                serverSocket.setSoTimeout(120000); // 2 minute timeout
+                try (Socket socket = serverSocket.accept()) {
+                    BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                    String requestLine = reader.readLine();
+
+                    // Send success page to browser
+                    String html = "<html><body><h2>Success!</h2><p>You can close this tab and return to Sweet Home 3D.</p></body></html>";
+                    OutputStream out = socket.getOutputStream();
+                    out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
+                        + html.length() + "\r\nConnection: close\r\n\r\n" + html).getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+
+                    // Extract code from request: "GET /?code=XXXX&state=... HTTP/1.1"
+                    if (requestLine == null || !requestLine.contains("code="))
+                        throw new IOException("No authorization code received");
+                    String query = requestLine.split(" ")[1];
+                    String code = null;
+                    for (String param : query.substring(query.indexOf('?') + 1).split("&")) {
+                        String[] kv = param.split("=", 2);
+                        if (kv.length == 2 && kv[0].equals("code"))
+                            code = URLDecoder.decode(kv[1], "UTF-8");
+                    }
+                    if (code == null)
+                        throw new IOException("Authorization code not found in callback");
+
+                    // Exchange code for token
+                    String tokenUrl = baseUrl + "/auth/token";
+                    String body = "grant_type=authorization_code&code=" + code + "&client_id=" + clientId;
+                    HttpURLConnection conn = (HttpURLConnection) new URL(tokenUrl).openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(10000);
+                    conn.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8));
+
+                    if (conn.getResponseCode() != 200)
+                        throw new IOException("Token exchange failed: HTTP " + conn.getResponseCode());
+
+                    StringBuilder response = new StringBuilder();
+                    try (BufferedReader r = new BufferedReader(
+                            new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = r.readLine()) != null)
+                            response.append(line);
+                    }
+
+                    Matcher m = Pattern.compile("\"access_token\"\\s*:\\s*\"([^\"]+)\"")
+                        .matcher(response.toString());
+                    if (!m.find())
+                        throw new IOException("No access_token in response");
+
+                    String accessToken = m.group(1);
+                    setHaApiToken(accessToken);
+                    callback.onSuccess(accessToken);
+                }
+            } catch (Exception e) {
+                callback.onError(e.getMessage());
+            } finally {
+                try { serverSocket.close(); } catch (IOException ignored) {}
+            }
+        }).start();
     }
 
     public Renderer getRenderer() {

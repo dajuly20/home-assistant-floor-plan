@@ -323,24 +323,25 @@ When using **Room Overlay** light mixing mode:
 
 The plugin can connect to your Home Assistant instance to fetch a list of all available entities. This lets you look up entity IDs directly from the plugin without switching to HA.
 
-### Creating a Long-Lived Access Token
+### Option A: Login with one click (recommended)
+
+1. Enter your **HA URL** in the plugin window (e.g. `http://homeassistant.local:8123`)
+2. Click **"Login to HA"** — your browser opens the Home Assistant login page
+3. Log in to Home Assistant as usual
+4. The plugin receives the access token automatically and fills it in — done
+
+### Option B: Create a Long-Lived Access Token manually
 
 1. Open Home Assistant in your browser
 2. Click on your **profile icon** in the bottom-left corner (or go to **Settings → People → Your profile**)
-3. Scroll down to the **"Long-lived access tokens"** section
-4. Click **"Create token"**
-5. Enter a name, e.g. `SweetHome3D Plugin`, and confirm
-6. **Copy the token immediately** — it will only be shown once
+3. Scroll down to **"Long-lived access tokens"**
+4. Click **"Create token"**, enter a name (e.g. `SweetHome3D Plugin`), and confirm
+5. **Copy the token immediately** — it will only be shown once
+6. Paste it into the **HA API Token** field in the plugin
 
-### Configuring the Plugin
+### Using the Entity List
 
-In the plugin window (**Tools → Home Assistant Floor Plan**):
-
-* **HA URL** — The address of your HA instance, e.g. `http://homeassistant.local:8123` or `http://192.168.1.100:8123`
-* **HA API Token** — Paste the long-lived access token you just created
-* Click **"Fetch entities"** to retrieve all available entity IDs from your HA instance
-
-The entity list appears in a dialog — use it as a reference when naming furniture pieces in Sweet Home 3D.
+Once the token is set, click **"Fetch entities"** to load all available entity IDs from your HA instance. The list appears in a dialog — use it as a reference when naming furniture pieces in Sweet Home 3D.
 
 > [!NOTE]
 > The token is saved in your SweetHome3D project file. Do not share your `.sh3d` project file publicly if it contains a token.

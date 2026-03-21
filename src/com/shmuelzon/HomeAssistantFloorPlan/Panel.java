@@ -118,6 +118,7 @@ public class Panel extends JPanel implements DialogView {
     private JTextField haUrlTextField;
     private JLabel haApiTokenLabel;
     private JPasswordField haApiTokenField;
+    private JButton haLoginButton;
     private JButton fetchEntitiesButton;
     private JCheckBox useExistingRendersCheckbox;
     private JProgressBar progressBar;
@@ -525,6 +526,44 @@ public class Panel extends JPanel implements DialogView {
             }
         });
 
+        haLoginButton = new JButton();
+        haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
+        haLoginButton.setToolTipText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.tooltip"));
+        haLoginButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                haLoginButton.setEnabled(false);
+                haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.waiting.text"));
+                try {
+                    controller.startOAuthFlow(new Controller.OAuthCallback() {
+                        public void onSuccess(String accessToken) {
+                            EventQueue.invokeLater(() -> {
+                                haApiTokenField.setText(accessToken);
+                                haLoginButton.setEnabled(true);
+                                haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
+                            });
+                        }
+                        public void onError(String message) {
+                            EventQueue.invokeLater(() -> {
+                                haLoginButton.setEnabled(true);
+                                haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
+                                JOptionPane.showMessageDialog(Panel.this,
+                                    resource.getString("HomeAssistantFloorPlan.Panel.error.oauthFailed.text") + "\n" + message,
+                                    resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                                    JOptionPane.ERROR_MESSAGE);
+                            });
+                        }
+                    });
+                } catch (Exception ex2) {
+                    haLoginButton.setEnabled(true);
+                    haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
+                    JOptionPane.showMessageDialog(Panel.this,
+                        resource.getString("HomeAssistantFloorPlan.Panel.error.oauthFailed.text") + "\n" + ex2.getMessage(),
+                        resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+
         fetchEntitiesButton = new JButton();
         fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
         fetchEntitiesButton.addActionListener(new ActionListener() {
@@ -746,8 +785,13 @@ public class Panel extends JPanel implements DialogView {
         add(haApiTokenField, new GridBagConstraints(
             1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(fetchEntitiesButton, new GridBagConstraints(
+        add(haLoginButton, new GridBagConstraints(
             3, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        currentGridYIndex++;
+
+        add(fetchEntitiesButton, new GridBagConstraints(
+            1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
