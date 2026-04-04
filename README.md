@@ -18,7 +18,10 @@ No manual image editing. No layout fiddling. Place your furniture, name it after
 * **Binary Sensor Support** — Motion detectors, presence sensors, contact sensors and more appear as state icons that show/hide based on their on/off state
 * **Night-Time Rendering** — Optionally generate a second render for night, automatically switching based on the HA `sun` integration
 * **Image Caching** — Skips re-rendering unchanged images so iterating on your floor plan is fast
-* **Progress Tracking** — Progress bar shows exactly how many images remain
+* **Live Render Preview** — A floating window shows the image being rendered in real time, with a progress counter
+* **Camera Selection** — Pick any saved camera/viewpoint from your SH3D project as the render perspective
+* **HA Entity Browser** — Fetch all entity IDs directly from HA to browse and verify names without leaving the plugin
+* **Entity Matching** — The plugin highlights which SH3D furniture names match HA entity IDs (green) and which don't (orange), with fuzzy "Did you mean?" rename suggestions
 
 ## Rendering Modes
 
@@ -40,21 +43,30 @@ Renders a separate image for every possible light combination across the entire 
 
 1. Download the latest plugin from the [releases](../../releases/latest) page and install it
 2. Prepare your model following the [criteria](#preparation) below
-3. Open your SH3D project and position the 3D view to your desired perspective
+3. Open your SH3D project
 4. Start the plugin: **Tools → Home Assistant Floor Plan**
-5. Adjust the [configuration options](#configuration-options)
-6. Click **Start** and wait for rendering to complete
-7. Copy the `floorplan/` folder and `floorplan.yaml` to your Home Assistant `/config/www/` path
-8. In Home Assistant, create a `picture-elements` card and paste the contents of `floorplan.yaml`
+5. Connect to Home Assistant (see [HA Connection](#home-assistant-connection)) and click **Fetch entities** to verify entity names
+6. Select the **camera** (perspective) to render from in the Camera dropdown
+7. Adjust the [configuration options](#configuration-options)
+8. Click **Start** — a live render preview window opens showing progress
+9. After rendering, click **Yes** when prompted to open the output folder
+10. Copy the `floorplan/` folder and `floorplan.yaml` to your Home Assistant `/config/www/` path
+11. In Home Assistant, create a `picture-elements` card and paste the contents of `floorplan.yaml`
 
 ## Configuration Options
 
 <img src="doc/options.png" alt="Plugin configuration options window" />
 
-The configuration window lists all detected lights grouped by room. Verify the list matches your expectations before starting.
+The configuration window shows two side-by-side trees:
+
+* **Left — Detected SH3D entities**: all furniture pieces whose names match a known HA entity type, grouped by domain. Names are color-coded: **green** = matched in the fetched HA entity list, **orange** = not found.
+* **Right — Available in Home Assistant**: all entity IDs fetched from your live HA instance, grouped by domain (populated after clicking **Fetch entities**).
+
+Right-click any entity in the left tree to **Rename** it (opens the SH3D furniture properties dialog) or to see **"Did you mean?"** suggestions based on the closest HA entity IDs. Double-click to open the entity's option panel.
 
 | Option | Description |
 | ------ | ----------- |
+| Camera | Which saved viewpoint/camera to render from |
 | Width / Height | Output resolution of the rendered images |
 | Light mixing mode | [Rendering mode](#rendering-modes) to use |
 | Render time | Date/time for the render — affects sun position, intensity and color |
@@ -63,12 +75,10 @@ The configuration window lists all detected lights grouped by room. Verify the l
 | Image format | PNG or JPEG output |
 | Quality | Low or high render quality |
 | Sensitivity | \[1–100\] Pixel difference threshold for room overlay transparent backgrounds |
-| Base path | HA path where floor plan images are served (default: `/local/floorplan`) |
 | Output directory | Local path on your PC where images and YAML are saved |
+| HA base path | HA path where floor plan images are served (default: `/local/floorplan`) |
 
-The progress bar at the bottom tracks how many images remain.
-
-Click any entity in the list to reveal per-entity settings.
+When rendering starts, a **live preview window** opens showing the current image being rendered and a `done / total` progress counter. Click **Stop** in that window to cancel at any time. When finished, the plugin asks whether to open the output folder directly.
 
 ### Entity Options
 
@@ -321,30 +331,36 @@ When using **Room Overlay** light mixing mode:
 
 ## Home Assistant Connection
 
-The plugin can connect to your Home Assistant instance to fetch a list of all available entities. This lets you look up entity IDs directly from the plugin without switching to HA.
+The plugin connects to your Home Assistant instance to fetch all available entity IDs. This lets you browse and verify entity names without leaving the plugin, and enables the green/orange match highlighting in the entity tree.
 
-### Option A: Login with one click (recommended)
+### Step 1 — Enter your HA URL
 
-1. Enter your **HA URL** in the plugin window (e.g. `http://homeassistant.local:8123`)
-2. Click **"Login to HA"** — your browser opens the Home Assistant login page
-3. Log in to Home Assistant as usual
-4. The plugin receives the access token automatically and fills it in — done
+In the plugin window, enter your HA address in the **HA URL** field, e.g. `http://homeassistant.local:8123` or `https://my-ha.duckdns.org`.
 
-### Option B: Create a Long-Lived Access Token manually
+### Step 2 — Authenticate
 
-1. Open Home Assistant in your browser
-2. Click on your **profile icon** in the bottom-left corner (or go to **Settings → People → Your profile**)
-3. Scroll down to **"Long-lived access tokens"**
-4. Click **"Create token"**, enter a name (e.g. `SweetHome3D Plugin`), and confirm
-5. **Copy the token immediately** — it will only be shown once
-6. Paste it into the **HA API Token** field in the plugin
+#### Option A: Login with one click (recommended)
 
-### Using the Entity List
+1. Click **"Login to HA"** next to the URL field
+2. Your browser opens the Home Assistant login page
+3. Log in as usual — the plugin receives the token automatically in the background
 
-Once the token is set, click **"Fetch entities"** to load all available entity IDs from your HA instance. The list appears in a dialog — use it as a reference when naming furniture pieces in Sweet Home 3D.
+#### Option B: Long-Lived Access Token
+
+1. In Home Assistant, go to your **Profile → Long-lived access tokens**
+2. Click **"Create token"**, give it a name (e.g. `SweetHome3D`), confirm and copy it immediately
+3. The token is passed to the plugin via the OAuth flow — you do not need to paste it manually
+
+### Step 3 — Fetch entities
+
+Click **"Fetch entities"** to load all entity IDs from HA. The count appears next to the button (e.g. `2830 entities`). The right tree in the main window updates to show all HA entities grouped by domain.
+
+Click **"Select entities"** to browse the full list in a searchable dialog with a domain filter dropdown.
+
+Click **"Check entities"** to re-run the green/orange matching against the current HA cache at any time.
 
 > [!NOTE]
-> The token is saved in your SweetHome3D project file. Do not share your `.sh3d` project file publicly if it contains a token.
+> The access token is saved inside your SweetHome3D project file (`.sh3d`). Do not share that file publicly.
 
 ## Frequently Asked Questions
 
@@ -352,19 +368,22 @@ Once the token is set, click **"Fetch entities"** to load all available entity I
   Copy the `floorplan/` folder and `floorplan.yaml` to your HA path, e.g. `/config/www`. Then reference them as `/local/floorplan/...` in the card.
 
 * **How do I set the rendering perspective?**
-  Before starting the plugin, position the SH3D 3D view to the exact angle you want rendered.
+  Use the **Camera** dropdown in the plugin window to select any stored viewpoint from your SH3D project. Save a viewpoint in SH3D via *3D View → Store point of view* before opening the plugin.
+
+* **Some of my furniture names are shown in orange — what does that mean?**
+  Orange means the furniture name was not found in the entity list fetched from HA. Click **"Check entities"** after fetching to refresh the colors. Right-click the entity for rename suggestions.
 
 * **How do I change rendering settings (antialiasing, etc.)?**
   Before starting the plugin, go to **Create photo...** in SH3D and adjust settings. You don't need to render anything — just change the settings and close.
 
 * **Can I work on the SH3D project while rendering?**
-  No. The plugin scripts the renders one by one. Don't touch the 3D view during rendering.
+  No. The plugin renders images one by one. Don't touch the 3D view during rendering. Use the **Stop** button in the render preview window to cancel.
 
 * **What's the difference between `renders/` and `floorplan/`?**
   `renders/` contains raw SH3D output. `floorplan/` contains processed images ready for HA. In CSS mode they're nearly identical. In Room Overlay mode, `floorplan/` has transparent backgrounds applied.
 
 * **What does "Use existing renders" do?**
-  Skips re-rendering images that already exist in `renders/`. Useful when you've already rendered with one mode and want to switch to another without waiting for all renders again.
+  Skips re-rendering images that already exist in `renders/`. Useful when you've already rendered with one mode and want to switch to another without re-rendering everything.
 
 * **My binary sensor icon position is off — what do I do?**
   Auto-position is calculated from the 3D model position. If it's off (especially at non-standard resolutions), manually override the position in the entity options panel.
@@ -374,17 +393,18 @@ Once the token is set, click **"Fetch entities"** to load all available entity I
 * [x] Allow selecting renderer (SunFlow/Yafaray)
 * [x] Allow selecting quality (high/low)
 * [x] Allow selecting date/time of render
-* [x] Create multiple renders for multiple hours of the day and display in Home
-      Assistant according to local time
-* [x] Allow stopping rendering thread
-* [X] Allow enabling/disabling/configuring state-icon
+* [x] Create multiple renders for multiple hours of the day and display in Home Assistant according to local time
+* [x] Allow stopping rendering thread (single click)
+* [x] Allow enabling/disabling/configuring state-icon
 * [x] Support including sensors state-icons/labels for other items
-* [ ] Support fans with animated gif/png with css3 image rotation
 * [x] Make sure state-icons/labels do not overlap
 * [x] Allow using existing rendered images and just re-create overlays and YAML
-* [ ] After rendering is complete, show preview of overlay images
+* [x] Show live render preview during rendering
 * [x] Allow overriding state-icons/labels positions, and save persistently
-* [X] Allow defining, per entity, if it should be an icon or label, and save
-      that persistently
+* [x] Allow defining, per entity, if it should be an icon or label, and save persistently
+* [x] Fetch HA entity list directly from the plugin (HA API integration)
+* [x] Camera/perspective selector — pick any saved viewpoint
+* [x] Entity name matching with green/orange highlighting and rename suggestions
+* [ ] Support fans with animated gif/png with css3 image rotation
 * [ ] Auto-upload generated files to Home Assistant after rendering
 * [ ] CLI / headless rendering mode for server-side use
