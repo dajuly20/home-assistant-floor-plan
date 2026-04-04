@@ -832,6 +832,7 @@ public class Panel extends JPanel implements DialogView {
         dialog.applyComponentOrientation(parentView != null ?
             ((JComponent)parentView).getComponentOrientation() : ComponentOrientation.getOrientation(Locale.getDefault()));
         dialog.setModal(false);
+        dialog.setResizable(true);
 
         dialog.addWindowListener(new WindowAdapter() {
             @Override

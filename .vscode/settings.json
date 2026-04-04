@@ -1,0 +1,9 @@
+{
+    "java.project.sourcePaths": ["src"],
+    "java.project.referencedLibraries": [
+        "dl/SweetHome3D-7.5.jar",
+        "dl/j3dcore.jar",
+        "dl/vecmath.jar"
+    ],
+    "java.compile.nullAnalysis.mode": "disabled"
+}

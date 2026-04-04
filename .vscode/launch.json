@@ -1,0 +1,30 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Run SweetHome3D with Plugin",
+            "request": "launch",
+            "mainClass": "com.eteks.sweethome3d.SweetHome3D",
+            "classPaths": [
+                "${workspaceFolder}/dl/SweetHome3D-7.5.jar",
+                "${workspaceFolder}/dl/j3dcore.jar",
+                "${workspaceFolder}/dl/vecmath.jar"
+            ],
+            "preLaunchTask": "install-plugin"
+        },
+        {
+            "type": "java",
+            "name": "Debug SweetHome3D with Plugin",
+            "request": "launch",
+            "mainClass": "com.eteks.sweethome3d.SweetHome3D",
+            "classPaths": [
+                "${workspaceFolder}/dl/SweetHome3D-7.5.jar",
+                "${workspaceFolder}/dl/j3dcore.jar",
+                "${workspaceFolder}/dl/vecmath.jar"
+            ],
+            "preLaunchTask": "install-plugin",
+            "vmArgs": "-Xdebug"
+        }
+    ]
+}
