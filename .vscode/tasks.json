@@ -2,6 +2,25 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "make test",
+            "type": "shell",
+            "command": "make test",
+            "options": {
+                "env": {
+                    "TERM": ""
+                }
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "install-plugin",
             "type": "shell",
             "command": "make install",
