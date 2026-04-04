@@ -35,6 +35,7 @@ import java.util.concurrent.Executors;
 
 import javax.swing.ActionMap;
 import javax.swing.DefaultListCellRenderer;
+import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -89,8 +90,10 @@ public class Panel extends JPanel implements DialogView {
     private ExecutorService renderExecutor;
     private JLabel detectedLightsLabel;
     private JTree detectedLightsTree;
+    private JTextField sh3dSearchField;
     private JLabel otherEntitiesLabel;
     private JTree otherEntitiesTree;
+    private JTextField haSearchField;
     private JLabel cameraLabel;
     private JComboBox<com.eteks.sweethome3d.model.Camera> cameraComboBox;
     private JLabel widthLabel;
@@ -279,6 +282,10 @@ public class Panel extends JPanel implements DialogView {
                 if (event.isPopupTrigger()) {
                     tree.setSelectionPath(path);
                     JPopupMenu menu = new JPopupMenu();
+                    JMenuItem copyItem = new JMenuItem("Copy to clipboard");
+                    copyItem.addActionListener(e -> copyToClipboard(entityNode.entity.getName()));
+                    menu.add(copyItem);
+                    menu.addSeparator();
                     JMenuItem renameItem = new JMenuItem("Rename...");
                     renameItem.addActionListener(e -> controller.openFurnitureProperties(entityNode.entity));
                     JMenuItem optionsItem = new JMenuItem("Options...");
@@ -326,12 +333,6 @@ public class Panel extends JPanel implements DialogView {
             }
         });
         tree.putClientProperty("JTree.lineStyle", "Angled");
-        tree.setUI(new BasicTreeUI() {
-            @Override
-            protected boolean shouldPaintExpandControl(TreePath path, int row, boolean isExpanded, boolean hasBeenExpanded, boolean isLeaf) {
-                return false;
-            }
-        });
         tree.setCellRenderer(new DefaultTreeCellRenderer() {
             {
                 setLeafIcon(null);
@@ -374,9 +375,49 @@ public class Panel extends JPanel implements DialogView {
                 .collect(Collectors.groupingBy(e -> e.getName().split("\\.")[0])));
         }
 
+        sh3dSearchField = createSearchField("Enter search term", () -> refreshTrees());
+
         otherEntitiesLabel = new JLabel(resource.getString("HomeAssistantFloorPlan.Panel.otherEntitiesTreeLabel.text"));
         otherEntitiesTree = createTree(resource.getString("HomeAssistantFloorPlan.Panel.otherEntitiesTree.root.text"));
         buildEntitiesGroupsTree(otherEntitiesTree, new java.util.HashMap<>());
+        otherEntitiesTree.addMouseListener(new java.awt.event.MouseAdapter() {
+            private void handleEvent(java.awt.event.MouseEvent event) {
+                if (!event.isPopupTrigger()) return;
+                TreePath path = otherEntitiesTree.getPathForLocation(event.getX(), event.getY());
+                if (path == null) return;
+                DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+                if (!node.isLeaf()) return;
+                Object userObj = node.getUserObject();
+                String entityId = (userObj instanceof HaEntityNode)
+                    ? ((HaEntityNode) userObj).entityId : userObj.toString();
+                otherEntitiesTree.setSelectionPath(path);
+                JPopupMenu menu = new JPopupMenu();
+                JMenuItem copyItem = new JMenuItem("Copy to clipboard");
+                copyItem.addActionListener(e -> copyToClipboard(entityId));
+                menu.add(copyItem);
+                menu.show(otherEntitiesTree, event.getX(), event.getY());
+            }
+            public void mousePressed(java.awt.event.MouseEvent event) { handleEvent(event); }
+            public void mouseReleased(java.awt.event.MouseEvent event) { handleEvent(event); }
+        });
+        otherEntitiesTree.setCellRenderer(new DefaultTreeCellRenderer() {
+            { setLeafIcon(null); setOpenIcon(null); setClosedIcon(null); }
+            @Override
+            public Component getTreeCellRendererComponent(JTree t, Object value, boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
+                super.getTreeCellRendererComponent(t, value, sel, expanded, leaf, row, hasFocus);
+                if (leaf && value instanceof DefaultMutableTreeNode) {
+                    Object userObj = ((DefaultMutableTreeNode) value).getUserObject();
+                    if (userObj instanceof HaEntityNode && !sel) {
+                        setForeground(((HaEntityNode) userObj).matched
+                            ? new java.awt.Color(0, 140, 0)
+                            : new java.awt.Color(200, 100, 0));
+                    }
+                }
+                return this;
+            }
+        });
+
+        haSearchField = createSearchField("Enter search term", () -> checkEntities());
 
         PropertyChangeListener updateTreeOnProperyChanged = new PropertyChangeListener() {
             public void propertyChange(PropertyChangeEvent ev) {
@@ -389,6 +430,10 @@ public class Panel extends JPanel implements DialogView {
             light.addPropertyChangeListener(Entity.Property.IS_RGB, updateTreeOnProperyChanged);
             light.addPropertyChangeListener(Entity.Property.DISPLAY_FURNITURE_CONDITION, updateTreeOnProperyChanged);
         }
+
+        // Populate right tree immediately if cached entities exist
+        if (!controller.getCachedHaEntityIds().isEmpty())
+            checkEntities();
 
         cameraLabel = new JLabel("Camera:");
         cameraComboBox = new JComboBox<>(controller.getAvailableCameras().toArray(new Camera[0]));
@@ -655,6 +700,7 @@ public class Panel extends JPanel implements DialogView {
                             EventQueue.invokeLater(() -> {
                                 haLoginButton.setEnabled(true);
                                 haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
+                                triggerFetchEntities(true);
                             });
                         }
                         public void onError(String message) {
@@ -671,44 +717,27 @@ public class Panel extends JPanel implements DialogView {
                 } catch (Exception ex2) {
                     haLoginButton.setEnabled(true);
                     haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
-                    JOptionPane.showMessageDialog(Panel.this,
-                        resource.getString("HomeAssistantFloorPlan.Panel.error.oauthFailed.text") + "\n" + ex2.getMessage(),
-                        resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
-                        JOptionPane.ERROR_MESSAGE);
+                    if ("HTTPS_TOKEN_REQUIRED".equals(ex2.getMessage())) {
+                        JOptionPane.showMessageDialog(Panel.this,
+                            "<html>Your HA uses HTTPS — OAuth with localhost redirect is not supported.<br><br>" +
+                            "The HA security page has been opened in your browser.<br>" +
+                            "Scroll down to <b>Long-Lived Access Tokens</b>, create one,<br>" +
+                            "and paste it into the <b>HA API Token</b> field.</html>",
+                            "Login to Home Assistant",
+                            JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(Panel.this,
+                            resource.getString("HomeAssistantFloorPlan.Panel.error.oauthFailed.text") + "\n" + ex2.getMessage(),
+                            resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                            JOptionPane.ERROR_MESSAGE);
+                    }
                 }
             }
         });
 
         fetchEntitiesButton = new JButton();
         fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
-        fetchEntitiesButton.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-                fetchEntitiesButton.setEnabled(false);
-                fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.loading.text"));
-                new Thread(() -> {
-                    try {
-                        java.util.List<String> entities = controller.fetchEntitiesFromHomeAssistant();
-                        EventQueue.invokeLater(() -> {
-                            fetchEntitiesButton.setEnabled(true);
-                            fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
-                            showEntitiesButton.setEnabled(true);
-                            haEntityCountLabel.setText(entities.size() + " entities");
-                            checkEntities();
-                            showEntitiesList(entities);
-                        });
-                    } catch (Exception ex) {
-                        EventQueue.invokeLater(() -> {
-                            fetchEntitiesButton.setEnabled(true);
-                            fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
-                            JOptionPane.showMessageDialog(Panel.this,
-                                resource.getString("HomeAssistantFloorPlan.Panel.error.fetchFailed.text") + "\n" + ex.getMessage(),
-                                resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
-                                JOptionPane.ERROR_MESSAGE);
-                        });
-                    }
-                }).start();
-            }
-        });
+        fetchEntitiesButton.addActionListener(e -> triggerFetchEntities(true));
 
         showEntitiesButton = new JButton("Select entities");
         java.util.List<String> cached = controller.getCachedHaEntityIds();
@@ -802,6 +831,15 @@ public class Panel extends JPanel implements DialogView {
         add(otherEntitiesScrollPane, new GridBagConstraints(
             2, currentGridYIndex, 2, 1, 1, 1, GridBagConstraints.CENTER,
             GridBagConstraints.BOTH, insets, 0, 0));
+        currentGridYIndex++;
+
+        /* Search fields under both trees */
+        add(wrapWithClearButton(sh3dSearchField), new GridBagConstraints(
+            0, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        add(wrapWithClearButton(haSearchField), new GridBagConstraints(
+            2, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
         /* Camera selector */
@@ -1044,36 +1082,69 @@ public class Panel extends JPanel implements DialogView {
     }
 
     private void refreshTrees() {
+        String filter = sh3dSearchField != null ? sh3dSearchField.getText().toLowerCase().trim() : "";
         List<Entity> allEntities = new ArrayList<>(controller.getLightEntities());
         allEntities.addAll(controller.getOtherEntities());
         buildEntitiesGroupsTree(detectedLightsTree, allEntities.stream()
+            .filter(e -> filter.isEmpty() || e.getName().toLowerCase().contains(filter))
             .collect(Collectors.groupingBy(e -> e.getName().split("\\.")[0])));
         checkEntities();
     }
 
+    private static class HaEntityNode {
+        final String entityId;
+        final boolean matched;
+        HaEntityNode(String entityId, boolean matched) { this.entityId = entityId; this.matched = matched; }
+        @Override public String toString() {
+            int dot = entityId.indexOf('.');
+            return dot >= 0 ? entityId.substring(dot + 1) : entityId;
+        }
+    }
+
     private void checkEntities() {
         List<String> haIds = controller.getCachedHaEntityIds();
+        java.util.Set<String> sh3dIds = new java.util.HashSet<>();
+        for (Entity e : controller.getLightEntities()) sh3dIds.add(e.getName());
+        for (Entity e : controller.getOtherEntities()) sh3dIds.add(e.getName());
+        String filter = haSearchField != null ? haSearchField.getText().toLowerCase().trim() : "";
+
+        // Right tree: SH3D entities first (green=found, orange=not found), then remaining HA entities
         DefaultMutableTreeNode root = new DefaultMutableTreeNode("HA Entities");
-        java.util.Map<String, DefaultMutableTreeNode> domains = new java.util.TreeMap<>();
-        for (String entityId : haIds) {
+        java.util.Map<String, DefaultMutableTreeNode> domains = new java.util.LinkedHashMap<>();
+
+        // Pass 1: SH3D entities sorted by domain
+        java.util.List<String> sh3dSorted = new java.util.ArrayList<>(sh3dIds);
+        java.util.Collections.sort(sh3dSorted);
+        for (String entityId : sh3dSorted) {
+            if (!filter.isEmpty() && !entityId.toLowerCase().contains(filter)) continue;
             int dot = entityId.indexOf('.');
             String domain = dot >= 0 ? entityId.substring(0, dot) : entityId;
-            String name = dot >= 0 ? entityId.substring(dot + 1) : entityId;
-            domains.computeIfAbsent(domain, d -> {
-                DefaultMutableTreeNode n = new DefaultMutableTreeNode(d);
-                root.add(n);
-                return n;
-            });
+            domains.computeIfAbsent(domain, d -> { DefaultMutableTreeNode n = new DefaultMutableTreeNode(d); root.add(n); return n; });
             DefaultMutableTreeNode domainNode = domains.get(domain);
-            domainNode.add(new DefaultMutableTreeNode(name));
+            boolean matched = haIds.contains(entityId);
+            domainNode.add(new DefaultMutableTreeNode(new HaEntityNode(entityId, matched)));
             domainNode.setUserObject(domain + " (" + domainNode.getChildCount() + ")");
         }
+        // Pass 2: remaining HA entities not in SH3D
+        for (String entityId : haIds) {
+            if (sh3dIds.contains(entityId)) continue;
+            if (!filter.isEmpty() && !entityId.toLowerCase().contains(filter)) continue;
+            int dot = entityId.indexOf('.');
+            String domain = dot >= 0 ? entityId.substring(0, dot) : entityId;
+            domains.computeIfAbsent(domain, d -> { DefaultMutableTreeNode n = new DefaultMutableTreeNode(d); root.add(n); return n; });
+            DefaultMutableTreeNode domainNode = domains.get(domain);
+            domainNode.add(new DefaultMutableTreeNode(new HaEntityNode(entityId, false)));
+            domainNode.setUserObject(domain + " (" + domainNode.getChildCount() + ")");
+        }
+           
         DefaultTreeModel model = (DefaultTreeModel) otherEntitiesTree.getModel();
         model.setRoot(root);
         model.reload();
-        otherEntitiesTree.expandRow(0);
+        for (int i = 0; i < otherEntitiesTree.getRowCount(); i++)
+            otherEntitiesTree.expandRow(i);
         ((DefaultTreeModel) detectedLightsTree.getModel()).reload();
-        detectedLightsTree.expandRow(0);
+        for (int i = 0; i < detectedLightsTree.getRowCount(); i++)
+            detectedLightsTree.expandRow(i);
     }
 
     private static final java.util.Set<String> SUPPORTED_DOMAINS = new java.util.HashSet<>(
@@ -1142,11 +1213,42 @@ public class Panel extends JPanel implements DialogView {
         JLabel countLabel = new JLabel();
         countLabel.setForeground(java.awt.Color.GRAY);
 
+        // Selected list — rebuilt whenever entities change
+        DefaultListModel<String> selectedModel = new DefaultListModel<>();
+        javax.swing.border.TitledBorder selectedBorder = javax.swing.BorderFactory.createTitledBorder("Selected (0)");
+        JList<String> selectedList = new JList<>(selectedModel);
+        selectedList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (!isSelected) setForeground(new java.awt.Color(0, 140, 0));
+                return this;
+            }
+        });
+        JScrollPane selectedScroll = new JScrollPane(selectedList);
+        selectedScroll.setBorder(selectedBorder);
+        selectedScroll.setPreferredSize(new java.awt.Dimension(500, 100));
+
         Runnable[] refreshRef = new Runnable[1];
         DefaultMutableTreeNode root = buildEntityTree(entities, "", selectedDomains(domainItems));
         DefaultTreeModel model = new DefaultTreeModel(root);
         JTree tree = new JTree(model);
         tree.setRootVisible(false);
+
+        Runnable rebuildSelected = () -> {
+            java.util.Set<String> sh3dIds = new java.util.HashSet<>();
+            for (Entity e : controller.getLightEntities()) sh3dIds.add(e.getName());
+            for (Entity e : controller.getOtherEntities()) sh3dIds.add(e.getName());
+            selectedModel.clear();
+            java.util.List<String> sorted = new java.util.ArrayList<>(sh3dIds);
+            java.util.Collections.sort(sorted);
+            for (String id : sorted) {
+                if (entities.contains(id)) selectedModel.addElement(id);
+            }
+            selectedBorder.setTitle("Selected (" + selectedModel.size() + ")");
+            selectedScroll.repaint();
+        };
+        rebuildSelected.run();
 
         refreshRef[0] = () -> {
             DefaultMutableTreeNode newRoot = buildEntityTree(entities, searchField.getText(), selectedDomains(domainItems));
@@ -1160,8 +1262,15 @@ public class Panel extends JPanel implements DialogView {
         });
         domainItems.values().forEach(item -> item.addActionListener(e -> refreshRef[0].run()));
 
+        // Listen for entity changes while dialog is open
+        PropertyChangeListener entityChangeListener = ev -> EventQueue.invokeLater(() -> {
+            rebuildSelected.run();
+            refreshRef[0].run();
+        });
+        controller.addPropertyChangeListener(Controller.Property.NUMBER_OF_RENDERS, entityChangeListener);
+
         JScrollPane scroll = new JScrollPane(tree);
-        scroll.setPreferredSize(new java.awt.Dimension(500, 420));
+        scroll.setPreferredSize(new java.awt.Dimension(500, 310));
 
         JPanel topRow = new JPanel(new BorderLayout(4, 0));
         topRow.add(filterButton, BorderLayout.WEST);
@@ -1169,7 +1278,8 @@ public class Panel extends JPanel implements DialogView {
         topRow.add(countLabel, BorderLayout.EAST);
 
         JPanel top = new JPanel(new BorderLayout(0, 4));
-        top.add(topRow, BorderLayout.NORTH);
+        top.add(selectedScroll, BorderLayout.NORTH);
+        top.add(topRow, BorderLayout.SOUTH);
 
         JPanel content = new JPanel(new BorderLayout(0, 4));
         content.add(top, BorderLayout.NORTH);
@@ -1178,6 +1288,78 @@ public class Panel extends JPanel implements DialogView {
         JOptionPane.showMessageDialog(this, content,
             "Select entities",
             JOptionPane.PLAIN_MESSAGE);
+
+        // Clean up listener when dialog closes
+        controller.removePropertyChangeListener(Controller.Property.NUMBER_OF_RENDERS, entityChangeListener);
+    }
+
+    private JTextField createSearchField(String placeholder, Runnable onChange) {
+        JTextField field = new JTextField();
+        // Draw placeholder text manually
+        field.putClientProperty("JTextField.placeholderText", placeholder);
+        field.getDocument().addDocumentListener(new SimpleDocumentListener() {
+            @Override public void executeUpdate(DocumentEvent e) { onChange.run(); }
+        });
+        // Paint placeholder manually for L&Fs that ignore putClientProperty
+        field.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent e) { field.repaint(); }
+            public void focusLost(java.awt.event.FocusEvent e) { field.repaint(); }
+        });
+        field.setUI(new javax.swing.plaf.basic.BasicTextFieldUI() {
+            @Override protected void paintSafely(java.awt.Graphics g) {
+                super.paintSafely(g);
+                if (field.getText().isEmpty() && !field.hasFocus()) {
+                    g.setColor(java.awt.Color.LIGHT_GRAY);
+                    java.awt.Insets ins = field.getInsets();
+                    g.drawString(placeholder, ins.left + 2, field.getHeight() - ins.bottom - 4);
+                }
+            }
+        });
+        return field;
+    }
+
+    private JPanel wrapWithClearButton(JTextField field) {
+        JPanel panel = new JPanel(new BorderLayout(2, 0));
+        JButton clearBtn = new JButton("\u2715");
+        clearBtn.setMargin(new java.awt.Insets(0, 4, 0, 4));
+        clearBtn.setFocusable(false);
+        clearBtn.addActionListener(e -> field.setText(""));
+        panel.add(field, BorderLayout.CENTER);
+        panel.add(clearBtn, BorderLayout.EAST);
+        return panel;
+    }
+
+    private void copyToClipboard(String text) {
+        java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(text);
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
+    }
+
+    private void triggerFetchEntities(boolean showListAfter) {
+        fetchEntitiesButton.setEnabled(false);
+        fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.loading.text"));
+        new Thread(() -> {
+            try {
+                java.util.List<String> entities = controller.fetchEntitiesFromHomeAssistant();
+                EventQueue.invokeLater(() -> {
+                    fetchEntitiesButton.setEnabled(true);
+                    fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
+                    showEntitiesButton.setEnabled(true);
+                    haEntityCountLabel.setText(entities.size() + " entities");
+                    checkEntities();
+                    if (showListAfter)
+                        showEntitiesList(entities);
+                });
+            } catch (Exception ex) {
+                EventQueue.invokeLater(() -> {
+                    fetchEntitiesButton.setEnabled(true);
+                    fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
+                    JOptionPane.showMessageDialog(Panel.this,
+                        resource.getString("HomeAssistantFloorPlan.Panel.error.fetchFailed.text") + "\n" + ex.getMessage(),
+                        resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                        JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }).start();
     }
 
     private java.awt.image.BufferedImage scaleImage(java.awt.image.BufferedImage src, int maxW, int maxH) {

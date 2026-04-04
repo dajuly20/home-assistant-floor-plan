@@ -26,6 +26,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -421,14 +422,21 @@ public class Controller {
         if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
             throw new IOException("Opening a browser is not supported on this system");
 
+        String baseUrl = haUrl.replaceAll("/+$", "");
+
+        // HTTPS HA instances (behind reverse proxy) block HTTP localhost redirects → use Long-Lived Token flow instead
+        if (baseUrl.startsWith("https://")) {
+            Desktop.getDesktop().browse(new URI(baseUrl + "/profile/security"));
+            throw new IOException("HTTPS_TOKEN_REQUIRED");
+        }
+
         // Start local server on a random free port
         ServerSocket serverSocket = new ServerSocket(0);
         int port = serverSocket.getLocalPort();
-        String clientId = "http://localhost:" + port + "/";
+        String clientId = "http://127.0.0.1:" + port + "/";
         String redirectUri = clientId;
-        String baseUrl = haUrl.replaceAll("/+$", "");
         String authUrl = baseUrl + "/auth/authorize?response_type=code&client_id="
-            + clientId + "&redirect_uri=" + redirectUri;
+            + URLEncoder.encode(clientId, "UTF-8") + "&redirect_uri=" + URLEncoder.encode(redirectUri, "UTF-8");
 
         // Open browser
         Desktop.getDesktop().browse(new URI(authUrl));
@@ -464,7 +472,7 @@ public class Controller {
 
                     // Exchange code for token
                     String tokenUrl = baseUrl + "/auth/token";
-                    String body = "grant_type=authorization_code&code=" + code + "&client_id=" + clientId;
+                    String body = "grant_type=authorization_code&code=" + URLEncoder.encode(code, "UTF-8") + "&client_id=" + URLEncoder.encode(clientId, "UTF-8");
                     HttpURLConnection conn = (HttpURLConnection) new URL(tokenUrl).openConnection();
                     conn.setRequestMethod("POST");
                     conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
@@ -660,6 +668,22 @@ public class Controller {
         addEligibleFurnitureToMap(furnitureByName, lightsFromOtherLevels, home.getFurniture());
 
         for (List<HomePieceOfFurniture> pieces : furnitureByName.values()) {
+            // Rebuild entity list when furniture is renamed
+            for (HomePieceOfFurniture piece : pieces) {
+                piece.addPropertyChangeListener("name", new PropertyChangeListener() {
+                    public void propertyChange(PropertyChangeEvent ev) {
+                        lightEntities.clear();
+                        otherEntities.clear();
+                        otherLevelsEntities.clear();
+                        lightsGroups.clear();
+                        createHomeAssistantEntities();
+                        buildLightsGroups();
+                        buildScenes();
+                        repositionEntities();
+                        propertyChangeSupport.firePropertyChange(Property.NUMBER_OF_RENDERS.name(), null, getNumberOfTotalRenders());
+                    }
+                });
+            }
             Entity entity = new Entity(settings, pieces);
             entity.addPropertyChangeListener(Entity.Property.POSITION, new PropertyChangeListener() {
                 public void propertyChange(PropertyChangeEvent ev) {
