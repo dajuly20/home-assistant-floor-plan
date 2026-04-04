@@ -207,7 +207,7 @@ public class Panel extends JPanel implements DialogView {
                                         JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
                                     if (choice == JOptionPane.YES_OPTION) {
                                         try {
-                                            java.awt.Desktop.getDesktop().open(new java.io.File(controller.getOutputDirectory()));
+                                            java.awt.Desktop.getDesktop().open(new java.io.File(controller.getEffectiveOutputDirectory()));
                                         } catch (Exception ex) {
                                             JOptionPane.showMessageDialog(Panel.this,
                                                 "Could not open folder: " + ex.getMessage(),
@@ -608,7 +608,7 @@ public class Panel extends JPanel implements DialogView {
         outputDirectoryOpenButton.setToolTipText("Open output directory in file manager");
         outputDirectoryOpenButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-                String dir = outputDirectoryTextField.getText();
+                String dir = controller.getEffectiveOutputDirectory();
                 if (dir.isEmpty()) return;
                 try {
                     java.awt.Desktop.getDesktop().open(new java.io.File(dir));
@@ -1007,7 +1007,8 @@ public class Panel extends JPanel implements DialogView {
             model.insertNodeInto(groupNode, root, root.getChildCount());
         }
 
-        tree.expandRow(0);
+        for (int i = 0; i < tree.getRowCount(); i++)
+            tree.expandRow(i);
     }
 
     private void confirmAndRename(JTree tree, TreePath path, Entity entity, String suggestion) {

@@ -83,6 +83,13 @@ public class Controller {
     private static final String CONTROLLER_HA_URL = "haUrl";
     private static final String CONTROLLER_HA_API_TOKEN = "haApiToken";
     private static final String CONTROLLER_CAMERA_NAME = "cameraName";
+    private static final String CONTROLLER_CAMERA_X = "cameraX";
+    private static final String CONTROLLER_CAMERA_Y = "cameraY";
+    private static final String CONTROLLER_CAMERA_Z = "cameraZ";
+    private static final String CONTROLLER_CAMERA_YAW = "cameraYaw";
+    private static final String CONTROLLER_CAMERA_PITCH = "cameraPitch";
+    private static final String CONTROLLER_CAMERA_FOV = "cameraFieldOfView";
+    private static final String CONTROLLER_CAMERA_LENS = "cameraLens";
 
     private Home home;
     private Settings settings;
@@ -147,8 +154,6 @@ public class Controller {
         renderDateTimes = settings.getListLong(CONTROLLER_RENDER_TIME, Arrays.asList(camera.getTime()));
         baseFolderName = settings.get(CONTROLLER_BASE_FOLDER_NAME, "/local/floorplan");
         outputDirectoryName = settings.get(CONTROLLER_OUTPUT_DIRECTORY_NAME, System.getProperty("user.home"));
-        outputRendersDirectoryName = outputDirectoryName + File.separator + "renders";
-        outputFloorplanDirectoryName = outputDirectoryName + File.separator + "floorplan";
         useExistingRenders = settings.getBoolean(CONTROLLER_USE_EXISTING_RENDERS, true);
         haUrl = settings.get(CONTROLLER_HA_URL, "http://homeassistant.local:8123");
         haApiToken = settings.get(CONTROLLER_HA_API_TOKEN, "");
@@ -161,6 +166,22 @@ public class Controller {
                 }
             }
         }
+        // Restore exact saved camera position (overrides current position of named camera)
+        String savedLens = settings.get(CONTROLLER_CAMERA_LENS, null);
+        if (savedLens != null) {
+            try {
+                camera.setX(settings.getFloat(CONTROLLER_CAMERA_X, camera.getX()));
+                camera.setY(settings.getFloat(CONTROLLER_CAMERA_Y, camera.getY()));
+                camera.setZ(settings.getFloat(CONTROLLER_CAMERA_Z, camera.getZ()));
+                camera.setYaw(settings.getFloat(CONTROLLER_CAMERA_YAW, camera.getYaw()));
+                camera.setPitch(settings.getFloat(CONTROLLER_CAMERA_PITCH, camera.getPitch()));
+                camera.setFieldOfView(settings.getFloat(CONTROLLER_CAMERA_FOV, camera.getFieldOfView()));
+                camera.setLens(Camera.Lens.valueOf(savedLens));
+            } catch (Exception e) {
+                // keep camera as-is if saved values are corrupt
+            }
+        }
+        rebuildOutputPaths();
     }
 
     public List<Camera> getAvailableCameras() {
@@ -179,8 +200,36 @@ public class Controller {
         camera = selectedCamera.clone();
         String name = selectedCamera.getName();
         settings.set(CONTROLLER_CAMERA_NAME, name != null ? name : "");
+        settings.set(CONTROLLER_CAMERA_X, String.valueOf(camera.getX()));
+        settings.set(CONTROLLER_CAMERA_Y, String.valueOf(camera.getY()));
+        settings.set(CONTROLLER_CAMERA_Z, String.valueOf(camera.getZ()));
+        settings.set(CONTROLLER_CAMERA_YAW, String.valueOf(camera.getYaw()));
+        settings.set(CONTROLLER_CAMERA_PITCH, String.valueOf(camera.getPitch()));
+        settings.set(CONTROLLER_CAMERA_FOV, String.valueOf(camera.getFieldOfView()));
+        settings.set(CONTROLLER_CAMERA_LENS, camera.getLens().name());
+        rebuildOutputPaths();
         repositionEntities();
         buildScenes();
+    }
+
+    private String getCameraSubfolder() {
+        String name = camera.getName();
+        if (name == null || name.isEmpty()) return "";
+        return name.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    private String getEffectiveBaseFolder() {
+        String sub = getCameraSubfolder();
+        String base = sub.isEmpty() ? baseFolderName : baseFolderName + "/" + sub;
+        return base + "/floorplan";
+    }
+
+    private void rebuildOutputPaths() {
+        String sub = getCameraSubfolder();
+        String effectiveOutputDir = sub.isEmpty() ? outputDirectoryName
+            : outputDirectoryName + File.separator + sub;
+        outputRendersDirectoryName = effectiveOutputDir + File.separator + "renders";
+        outputFloorplanDirectoryName = effectiveOutputDir + File.separator + "floorplan";
     }
 
     public void addPropertyChangeListener(Property property, PropertyChangeListener listener) {
@@ -278,11 +327,15 @@ public class Controller {
         return outputDirectoryName;
     }
 
+    public String getEffectiveOutputDirectory() {
+        String sub = getCameraSubfolder();
+        return sub.isEmpty() ? outputDirectoryName : outputDirectoryName + File.separator + sub;
+    }
+
     public void setOutputDirectory(String outputDirectoryName) {
         this.outputDirectoryName = outputDirectoryName;
-        outputRendersDirectoryName = outputDirectoryName + File.separator + "renders";
-        outputFloorplanDirectoryName = outputDirectoryName + File.separator + "floorplan";
         settings.set(CONTROLLER_OUTPUT_DIRECTORY_NAME, outputDirectoryName);
+        rebuildOutputPaths();
     }
 
     public boolean getUserExistingRenders() {
@@ -545,7 +598,7 @@ public class Controller {
             generateTransparentImage(outputFloorplanDirectoryName + File.separator + TRANSPARENT_IMAGE_NAME + ".png");
             String yaml = String.format(
                 "type: picture-elements\n" +
-                "image: " + this.baseFolderName + "/%s.png?version=%s\n" +
+                "image: " + getEffectiveBaseFolder() + "/%s.png?version=%s\n" +
                 "elements:\n", TRANSPARENT_IMAGE_NAME, renderHash(TRANSPARENT_IMAGE_NAME, true));
             
             turnOffLightsFromOtherLevels();
@@ -795,6 +848,8 @@ public class Controller {
     private BufferedImage generateImage(List<Entity> onLights, String name) throws IOException, InterruptedException {
         String fileName = outputRendersDirectoryName + File.separator + name + ".png";
 
+        if (stopRequested || Thread.interrupted())
+            throw new InterruptedException();
         if (useExistingRenders && Files.exists(Paths.get(fileName))) {
             propertyChangeSupport.firePropertyChange(Property.COMPLETED_RENDERS.name(), numberOfCompletedRenders, ++numberOfCompletedRenders);
             return ImageIO.read(Files.newInputStream(Paths.get(fileName)));
@@ -841,6 +896,10 @@ public class Controller {
         String imageExtension = createOverlayImage ? "png" : getFloorplanImageExtention();
         File floorPlanFile = new File(outputFloorplanDirectoryName + File.separator + name + "." + imageExtension);
 
+        if (useExistingRenders && floorPlanFile.exists()) {
+            return ImageIO.read(floorPlanFile);
+        }
+
         if (!createOverlayImage) {
             ImageIO.write(image, imageExtension, floorPlanFile);
             return image;
@@ -869,6 +928,8 @@ public class Controller {
 
     private BufferedImage generateRedTintedImage(BufferedImage image, String imageName) throws IOException {
         File redTintedFile = new File(outputFloorplanDirectoryName + File.separator + imageName + ".red.png");
+        if (useExistingRenders && redTintedFile.exists())
+            return ImageIO.read(redTintedFile);
         BufferedImage tintedImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
 
         for(int x = 0; x < image.getWidth(); x++) {
@@ -935,7 +996,7 @@ public class Controller {
             "          action: none\n" +
             "        hold_action:\n" +
             "          action: none\n" +
-            "        image: " + this.baseFolderName + "/%s.%s?version=%s\n" +
+            "        image: " + getEffectiveBaseFolder() + "/%s.%s?version=%s\n" +
             "        filter: none\n" +
             "        style:\n" +
             "          left: 50%%\n" +
@@ -970,8 +1031,8 @@ public class Controller {
             "          type: image\n" +
             "          image: >-\n" +
             "              ${!isInColoredMode(COLOR_MODE) || (isInColoredMode(COLOR_MODE) && LIGHT_COLOR && LIGHT_COLOR[0] == 0 && LIGHT_COLOR[1] == 0) ?\n" +
-            "              '" + this.baseFolderName + "/%s.png?version=%s' :\n" +
-            "              '" + this.baseFolderName + "/%s.png?version=%s' }\n" +
+            "              '" + getEffectiveBaseFolder() + "/%s.png?version=%s' :\n" +
+            "              '" + getEffectiveBaseFolder() + "/%s.png?version=%s' }\n" +
             "        style:\n" +
             "          filter: '${ \"hue-rotate(\" + (isInColoredMode(COLOR_MODE) && LIGHT_COLOR ? LIGHT_COLOR[0] : 0) + \"deg) saturate(\" + (LIGHT_COLOR ? LIGHT_COLOR[1] / 100 : 1) + \")\"}'\n" +
             "          opacity: '${LIGHT_STATE === ''on'' ? (BRIGHTNESS / 255) : ''100''}'\n" +
