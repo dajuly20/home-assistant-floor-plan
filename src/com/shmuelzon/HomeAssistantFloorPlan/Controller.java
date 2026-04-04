@@ -109,6 +109,7 @@ public class Controller {
     private boolean useExistingRenders;
     private String haUrl;
     private String haApiToken;
+    private List<String> cachedHaEntityIds = new ArrayList<>();
     private Scenes scenes;
 
     public Controller(Home home) {
@@ -117,6 +118,7 @@ public class Controller {
         camera = home.getCamera().clone();
         propertyChangeSupport = new PropertyChangeSupport(this);
         loadDefaultSettings();
+        loadEntityCache();
         createHomeAssistantEntities();
 
         buildLightsGroups();
@@ -297,7 +299,25 @@ public class Controller {
             entityIds.add(matcher.group(1));
 
         Collections.sort(entityIds);
+        cachedHaEntityIds = entityIds;
+        saveEntityCache(entityIds);
         return entityIds;
+    }
+
+    public List<String> getCachedHaEntityIds() {
+        return cachedHaEntityIds;
+    }
+
+    private static final String CONTROLLER_HA_ENTITY_CACHE = "haEntityCache";
+
+    private void saveEntityCache(List<String> entityIds) {
+        settings.set(CONTROLLER_HA_ENTITY_CACHE, String.join(",", entityIds));
+    }
+
+    private void loadEntityCache() {
+        String cached = settings.get(CONTROLLER_HA_ENTITY_CACHE, "");
+        if (!cached.isEmpty())
+            cachedHaEntityIds = new ArrayList<>(Arrays.asList(cached.split(",")));
     }
 
     public interface OAuthCallback {

@@ -1,5 +1,6 @@
 package com.shmuelzon.HomeAssistantFloorPlan;
 
+import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.ComponentOrientation;
 import java.awt.Cursor;
@@ -37,7 +38,6 @@ import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
-import javax.swing.JPasswordField;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
@@ -115,15 +115,17 @@ public class Panel extends JPanel implements DialogView {
     private JButton outputDirectoryBrowseButton;
     private FileContentManager outputDirectoryChooser;
     private JLabel haUrlLabel;
+    private JComboBox<String> haUrlProtocolComboBox;
     private JTextField haUrlTextField;
-    private JLabel haApiTokenLabel;
-    private JPasswordField haApiTokenField;
+    private JLabel haEntityCountLabel;
     private JButton haLoginButton;
     private JButton fetchEntitiesButton;
+    private JButton showEntitiesButton;
     private JCheckBox useExistingRendersCheckbox;
     private JProgressBar progressBar;
     private JButton startButton;
     private JButton closeButton;
+    private JButton checkEntitiesButton;
 
     private class EntityNode {
         public Entity entity;
@@ -246,6 +248,8 @@ public class Panel extends JPanel implements DialogView {
                     return;
                 }
 
+                if (event.getClickCount() != 2)
+                    return;
                 EntityNode entityNode = (EntityNode)node.getUserObject();
                 openEntityOptionsPanel(entityNode.entity);
             }
@@ -274,10 +278,30 @@ public class Panel extends JPanel implements DialogView {
                 return false;
             }
         });
-        DefaultTreeCellRenderer renderer = (DefaultTreeCellRenderer)tree.getCellRenderer();
-        renderer.setLeafIcon(null);
-        renderer.setOpenIcon(null);
-        renderer.setClosedIcon(null);
+        tree.setCellRenderer(new DefaultTreeCellRenderer() {
+            {
+                setLeafIcon(null);
+                setOpenIcon(null);
+                setClosedIcon(null);
+            }
+            @Override
+            public Component getTreeCellRendererComponent(JTree t, Object value, boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
+                super.getTreeCellRendererComponent(t, value, sel, expanded, leaf, row, hasFocus);
+                if (leaf && value instanceof DefaultMutableTreeNode) {
+                    Object userObj = ((DefaultMutableTreeNode) value).getUserObject();
+                    if (userObj instanceof EntityNode) {
+                        java.util.List<String> haIds = controller.getCachedHaEntityIds();
+                        if (!haIds.isEmpty()) {
+                            String entityName = ((EntityNode) userObj).entity.getName();
+                            setForeground(haIds.contains(entityName)
+                                ? new java.awt.Color(0, 140, 0)
+                                : new java.awt.Color(200, 100, 0));
+                        }
+                    }
+                }
+                return this;
+            }
+        });
         tree.setBorder(LineBorder.createGrayLineBorder());
         tree.setVisibleRowCount(20);
 
@@ -506,25 +530,23 @@ public class Panel extends JPanel implements DialogView {
 
         haUrlLabel = new JLabel();
         haUrlLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.haUrlLabel.text"));
+        haUrlProtocolComboBox = new JComboBox<>(new String[]{"https://", "http://"});
+        haUrlProtocolComboBox.setPrototypeDisplayValue("https://");
+        String savedUrl = controller.getHaUrl();
+        String savedProtocol = savedUrl.startsWith("http://") ? "http://" : "https://";
+        String savedHost = savedUrl.replaceFirst("^https?://", "");
+        haUrlProtocolComboBox.setSelectedItem(savedProtocol);
         haUrlTextField = new JTextField(20);
-        haUrlTextField.setText(controller.getHaUrl());
-        haUrlTextField.getDocument().addDocumentListener(new SimpleDocumentListener() {
+        haUrlTextField.setText(savedHost);
+        SimpleDocumentListener haUrlListener = new SimpleDocumentListener() {
             @Override
             public void executeUpdate(DocumentEvent e) {
-                controller.setHaUrl(haUrlTextField.getText());
+                controller.setHaUrl((String)haUrlProtocolComboBox.getSelectedItem() + haUrlTextField.getText());
             }
-        });
-
-        haApiTokenLabel = new JLabel();
-        haApiTokenLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.haApiTokenLabel.text"));
-        haApiTokenField = new JPasswordField(20);
-        haApiTokenField.setText(controller.getHaApiToken());
-        haApiTokenField.getDocument().addDocumentListener(new SimpleDocumentListener() {
-            @Override
-            public void executeUpdate(DocumentEvent e) {
-                controller.setHaApiToken(new String(haApiTokenField.getPassword()));
-            }
-        });
+        };
+        haUrlTextField.getDocument().addDocumentListener(haUrlListener);
+        haUrlProtocolComboBox.addActionListener(e ->
+            controller.setHaUrl((String)haUrlProtocolComboBox.getSelectedItem() + haUrlTextField.getText()));
 
         haLoginButton = new JButton();
         haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
@@ -537,7 +559,6 @@ public class Panel extends JPanel implements DialogView {
                     controller.startOAuthFlow(new Controller.OAuthCallback() {
                         public void onSuccess(String accessToken) {
                             EventQueue.invokeLater(() -> {
-                                haApiTokenField.setText(accessToken);
                                 haLoginButton.setEnabled(true);
                                 haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
                             });
@@ -576,15 +597,10 @@ public class Panel extends JPanel implements DialogView {
                         EventQueue.invokeLater(() -> {
                             fetchEntitiesButton.setEnabled(true);
                             fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
-                            JList<String> list = new JList<>(entities.toArray(new String[0]));
-                            list.setVisibleRowCount(20);
-                            JScrollPane scroll = new JScrollPane(list);
-                            scroll.setPreferredSize(new java.awt.Dimension(400, 400));
-                            JOptionPane.showMessageDialog(Panel.this,
-                                scroll,
-                                resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesDialog.title")
-                                    + " (" + entities.size() + ")",
-                                JOptionPane.INFORMATION_MESSAGE);
+                            showEntitiesButton.setEnabled(true);
+                            haEntityCountLabel.setText(entities.size() + " entities");
+                            checkEntities();
+                            showEntitiesList(entities);
                         });
                     } catch (Exception ex) {
                         EventQueue.invokeLater(() -> {
@@ -599,6 +615,14 @@ public class Panel extends JPanel implements DialogView {
                 }).start();
             }
         });
+
+        showEntitiesButton = new JButton("Show entities");
+        java.util.List<String> cached = controller.getCachedHaEntityIds();
+        showEntitiesButton.setEnabled(!cached.isEmpty());
+        showEntitiesButton.addActionListener(e -> showEntitiesList(controller.getCachedHaEntityIds()));
+
+        haEntityCountLabel = new JLabel(cached.isEmpty() ? "" : cached.size() + " entities");
+        haEntityCountLabel.setForeground(java.awt.Color.GRAY);
 
         progressBar = new JProgressBar() {
             @Override
@@ -627,6 +651,8 @@ public class Panel extends JPanel implements DialogView {
         startButton.setEnabled(!outputDirectoryTextField.getText().isEmpty());
         closeButton = new JButton(actionMap.get(ActionType.CLOSE));
         closeButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.closeButton.text"));
+        checkEntitiesButton = new JButton("Check entities");
+        checkEntitiesButton.addActionListener(e -> checkEntities());
     }
 
     private void setComponentsEnabled(boolean enabled) {
@@ -674,13 +700,13 @@ public class Panel extends JPanel implements DialogView {
         JScrollPane detectedLightsScrollPane = new JScrollPane(detectedLightsTree);
         detectedLightsScrollPane.setPreferredSize(new Dimension(275, 350));
         add(detectedLightsScrollPane, new GridBagConstraints(
-            0, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+            0, currentGridYIndex, 2, 1, 1, 1, GridBagConstraints.CENTER,
+            GridBagConstraints.BOTH, insets, 0, 0));
         JScrollPane otherEntitiesScrollPane = new JScrollPane(otherEntitiesTree);
         otherEntitiesScrollPane.setPreferredSize(new Dimension(275, 350));
         add(otherEntitiesScrollPane, new GridBagConstraints(
-            2, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+            2, currentGridYIndex, 2, 1, 1, 1, GridBagConstraints.CENTER,
+            GridBagConstraints.BOTH, insets, 0, 0));
         currentGridYIndex++;
 
         /* Resolution */
@@ -776,19 +802,14 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         /* Home Assistant connection */
+        JPanel haUrlPanel = new JPanel(new BorderLayout(0, 0));
+        haUrlPanel.add(haUrlProtocolComboBox, BorderLayout.WEST);
+        haUrlPanel.add(haUrlTextField, BorderLayout.CENTER);
         add(haUrlLabel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(haUrlTextField, new GridBagConstraints(
-            1, currentGridYIndex, 3, 1, 0, 0, GridBagConstraints.CENTER,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        currentGridYIndex++;
-
-        add(haApiTokenLabel, new GridBagConstraints(
-            0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(haApiTokenField, new GridBagConstraints(
-            1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
+        add(haUrlPanel, new GridBagConstraints(
+            1, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(haLoginButton, new GridBagConstraints(
             3, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
@@ -798,6 +819,14 @@ public class Panel extends JPanel implements DialogView {
         add(fetchEntitiesButton, new GridBagConstraints(
             1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        add(showEntitiesButton, new GridBagConstraints(
+            3, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        currentGridYIndex++;
+
+        add(haEntityCountLabel, new GridBagConstraints(
+            1, currentGridYIndex, 3, 1, 0, 0, GridBagConstraints.WEST,
+            GridBagConstraints.NONE, insets, 0, 0));
         currentGridYIndex++;
 
         /* Options */
@@ -826,13 +855,15 @@ public class Panel extends JPanel implements DialogView {
             currentPanel.close();
         final JOptionPane optionPane = new JOptionPane(this,
                 JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION,
-                null, new Object [] {startButton, closeButton}, startButton);
+                null, new Object [] {startButton, checkEntitiesButton, closeButton}, startButton);
         final JDialog dialog =
         optionPane.createDialog(SwingUtilities.getRootPane((Component)parentView), resource.getString("HomeAssistantFloorPlan.Plugin.NAME"));
         dialog.applyComponentOrientation(parentView != null ?
             ((JComponent)parentView).getComponentOrientation() : ComponentOrientation.getOrientation(Locale.getDefault()));
         dialog.setModal(false);
         dialog.setResizable(true);
+        dialog.pack();
+        dialog.setSize(700, 800);
 
         dialog.addWindowListener(new WindowAdapter() {
             @Override
@@ -872,6 +903,23 @@ public class Panel extends JPanel implements DialogView {
         for (int i = 0; i < tree.getRowCount(); i++) {
             tree.expandRow(i);
         }
+    }
+
+    private void checkEntities() {
+        detectedLightsTree.repaint();
+        otherEntitiesTree.repaint();
+    }
+
+    private void showEntitiesList(java.util.List<String> entities) {
+        JList<String> list = new JList<>(entities.toArray(new String[0]));
+        list.setVisibleRowCount(20);
+        JScrollPane scroll = new JScrollPane(list);
+        scroll.setPreferredSize(new java.awt.Dimension(400, 400));
+        JOptionPane.showMessageDialog(this,
+            scroll,
+            resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesDialog.title")
+                + " (" + entities.size() + ")",
+            JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void openEntityOptionsPanel(Entity entity) {
