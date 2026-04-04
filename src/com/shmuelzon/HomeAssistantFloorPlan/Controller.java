@@ -53,6 +53,7 @@ import javax.xml.bind.DatatypeConverter;
 import com.eteks.sweethome3d.j3d.AbstractPhotoRenderer;
 import com.eteks.sweethome3d.model.Camera;
 import com.eteks.sweethome3d.model.Home;
+import com.eteks.sweethome3d.viewcontroller.HomeController;
 import com.eteks.sweethome3d.model.HomeFurnitureGroup;
 import com.eteks.sweethome3d.model.HomeLight;
 import com.eteks.sweethome3d.model.HomePieceOfFurniture;
@@ -60,7 +61,7 @@ import com.eteks.sweethome3d.model.Room;
 
 
 public class Controller {
-    public enum Property {COMPLETED_RENDERS, NUMBER_OF_RENDERS}
+    public enum Property {COMPLETED_RENDERS, NUMBER_OF_RENDERS, RENDER_PREVIEW}
     public enum LightMixingMode {CSS, OVERLAY, FULL}
     public enum Renderer {YAFARAY, SUNFLOW}
     public enum Quality {HIGH, LOW}
@@ -81,6 +82,7 @@ public class Controller {
     private static final String CONTROLLER_USE_EXISTING_RENDERS = "useExistingRenders";
     private static final String CONTROLLER_HA_URL = "haUrl";
     private static final String CONTROLLER_HA_API_TOKEN = "haApiToken";
+    private static final String CONTROLLER_CAMERA_NAME = "cameraName";
 
     private Home home;
     private Settings settings;
@@ -94,6 +96,7 @@ public class Controller {
     private PropertyChangeSupport propertyChangeSupport;
     private int numberOfCompletedRenders;
     private AbstractPhotoRenderer photoRenderer;
+    private volatile boolean stopRequested = false;
     private int renderWidth;
     private int renderHeight;
     private LightMixingMode lightMixingMode;
@@ -112,8 +115,15 @@ public class Controller {
     private List<String> cachedHaEntityIds = new ArrayList<>();
     private Scenes scenes;
 
+    private HomeController homeController;
+
     public Controller(Home home) {
+        this(home, null);
+    }
+
+    public Controller(Home home, HomeController homeController) {
         this.home = home;
+        this.homeController = homeController;
         settings = new Settings(home);
         camera = home.getCamera().clone();
         propertyChangeSupport = new PropertyChangeSupport(this);
@@ -142,6 +152,35 @@ public class Controller {
         useExistingRenders = settings.getBoolean(CONTROLLER_USE_EXISTING_RENDERS, true);
         haUrl = settings.get(CONTROLLER_HA_URL, "http://homeassistant.local:8123");
         haApiToken = settings.get(CONTROLLER_HA_API_TOKEN, "");
+        String savedCameraName = settings.get(CONTROLLER_CAMERA_NAME, null);
+        if (savedCameraName != null && !savedCameraName.isEmpty()) {
+            for (Camera c : getAvailableCameras()) {
+                if (savedCameraName.equals(c.getName())) {
+                    camera = c.clone();
+                    break;
+                }
+            }
+        }
+    }
+
+    public List<Camera> getAvailableCameras() {
+        List<Camera> cameras = new ArrayList<>();
+        cameras.add(home.getTopCamera());
+        cameras.add(home.getObserverCamera());
+        cameras.addAll(home.getStoredCameras());
+        return cameras;
+    }
+
+    public Camera getSelectedCamera() {
+        return camera;
+    }
+
+    public void setSelectedCamera(Camera selectedCamera) {
+        camera = selectedCamera.clone();
+        String name = selectedCamera.getName();
+        settings.set(CONTROLLER_CAMERA_NAME, name != null ? name : "");
+        repositionEntities();
+        buildScenes();
     }
 
     public void addPropertyChangeListener(Property property, PropertyChangeListener listener) {
@@ -446,7 +485,44 @@ public class Controller {
         buildScenes();
     }
 
+    public void renameEntity(Entity entity, String newName) {
+        for (HomePieceOfFurniture piece : entity.getPiecesOfFurniture())
+            piece.setName(newName);
+    }
+
+    public List<String> findSimilarEntities(String name, int maxResults) {
+        if (cachedHaEntityIds.isEmpty()) return new ArrayList<>();
+        String nameLower = name.toLowerCase();
+        return cachedHaEntityIds.stream()
+            .sorted((a, b) -> levenshtein(nameLower, a.toLowerCase()) - levenshtein(nameLower, b.toLowerCase()))
+            .limit(maxResults)
+            .collect(Collectors.toList());
+    }
+
+    private int levenshtein(String a, String b) {
+        int[] dp = new int[b.length() + 1];
+        for (int i = 0; i <= b.length(); i++) dp[i] = i;
+        for (int i = 1; i <= a.length(); i++) {
+            int prev = dp[0];
+            dp[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int temp = dp[j];
+                dp[j] = a.charAt(i-1) == b.charAt(j-1) ? prev :
+                    1 + Math.min(prev, Math.min(dp[j], dp[j-1]));
+                prev = temp;
+            }
+        }
+        return dp[b.length()];
+    }
+
+    public void openFurnitureProperties(Entity entity) {
+        if (homeController == null) return;
+        home.setSelectedItems(new ArrayList<>(entity.getPiecesOfFurniture()));
+        homeController.modifySelectedFurniture();
+    }
+
     public void stop() {
+        stopRequested = true;
         if (photoRenderer != null) {
             photoRenderer.stop();
             photoRenderer = null;
@@ -458,6 +534,7 @@ public class Controller {
     }
 
     public void render() throws IOException, InterruptedException {
+        stopRequested = false;
         propertyChangeSupport.firePropertyChange(Property.COMPLETED_RENDERS.name(), numberOfCompletedRenders, 0);
         numberOfCompletedRenders = 0;
 
@@ -744,12 +821,17 @@ public class Controller {
             rendererToClassName.get(renderer),
             home, null, this.quality == Quality.LOW ? AbstractPhotoRenderer.Quality.LOW : AbstractPhotoRenderer.Quality.HIGH);
         BufferedImage image = new BufferedImage(renderWidth, renderHeight, BufferedImage.TYPE_INT_RGB);
-        photoRenderer.render(image, camera, null);
+        photoRenderer.render(image, camera, new java.awt.image.ImageObserver() {
+            public boolean imageUpdate(java.awt.Image img, int infoflags, int x, int y, int width, int height) {
+                propertyChangeSupport.firePropertyChange(Property.RENDER_PREVIEW.name(), null, image);
+                return (infoflags & java.awt.image.ImageObserver.ALLBITS) == 0;
+            }
+        });
         if (photoRenderer != null) {
             photoRenderer.dispose();
             photoRenderer = null;
         }
-        if (Thread.interrupted())
+        if (stopRequested || Thread.interrupted())
             throw new InterruptedException();
 
         return image;

@@ -42,6 +42,9 @@ import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
@@ -63,6 +66,7 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.TreePath;
 
+import com.eteks.sweethome3d.model.Camera;
 import com.eteks.sweethome3d.model.UserPreferences;
 import com.eteks.sweethome3d.swing.AutoCommitSpinner;
 import com.eteks.sweethome3d.swing.FileContentManager;
@@ -87,6 +91,8 @@ public class Panel extends JPanel implements DialogView {
     private JTree detectedLightsTree;
     private JLabel otherEntitiesLabel;
     private JTree otherEntitiesTree;
+    private JLabel cameraLabel;
+    private JComboBox<com.eteks.sweethome3d.model.Camera> cameraComboBox;
     private JLabel widthLabel;
     private JSpinner widthSpinner;
     private JLabel heightLabel;
@@ -113,6 +119,7 @@ public class Panel extends JPanel implements DialogView {
     private JLabel imageFormatLabel;
     private JComboBox<Controller.ImageFormat> imageFormatComboBox;
     private JButton outputDirectoryBrowseButton;
+    private JButton outputDirectoryOpenButton;
     private FileContentManager outputDirectoryChooser;
     private JLabel haUrlLabel;
     private JComboBox<String> haUrlProtocolComboBox;
@@ -182,22 +189,55 @@ public class Panel extends JPanel implements DialogView {
             @Override
             public void actionPerformed(ActionEvent ev) {
                 renderExecutor = Executors.newSingleThreadExecutor();
+                final JDialog progressWindow = showRenderProgressWindow();
                 renderExecutor.execute(new Runnable() {
                     public void run() {
                         setComponentsEnabled(false);
                         try {
                             controller.render();
-                            JOptionPane.showMessageDialog(null, resource.getString("HomeAssistantFloorPlan.Panel.info.finishedRendering.text"));
+                            EventQueue.invokeLater(new Runnable() {
+                                public void run() {
+                                    progressWindow.dispose();
+                                    setComponentsEnabled(true);
+                                    renderExecutor = null;
+                                    int choice = JOptionPane.showConfirmDialog(Panel.this,
+                                        resource.getString("HomeAssistantFloorPlan.Panel.info.finishedRendering.text")
+                                            + "\n" + resource.getString("HomeAssistantFloorPlan.Panel.info.openFolder.text"),
+                                        resource.getString("HomeAssistantFloorPlan.Plugin.NAME"),
+                                        JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+                                    if (choice == JOptionPane.YES_OPTION) {
+                                        try {
+                                            java.awt.Desktop.getDesktop().open(new java.io.File(controller.getOutputDirectory()));
+                                        } catch (Exception ex) {
+                                            JOptionPane.showMessageDialog(Panel.this,
+                                                "Could not open folder: " + ex.getMessage(),
+                                                resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                                                JOptionPane.ERROR_MESSAGE);
+                                        }
+                                    }
+                                }
+                            });
                         } catch (InterruptedException e) {
+                            EventQueue.invokeLater(new Runnable() {
+                                public void run() {
+                                    progressWindow.dispose();
+                                    setComponentsEnabled(true);
+                                    renderExecutor = null;
+                                }
+                            });
                         } catch (Exception e) {
-                            JOptionPane.showMessageDialog(null, resource.getString("HomeAssistantFloorPlan.Panel.error.failedRendering.text") + " " + e);
+                            EventQueue.invokeLater(new Runnable() {
+                                public void run() {
+                                    progressWindow.dispose();
+                                    setComponentsEnabled(true);
+                                    renderExecutor = null;
+                                    JOptionPane.showMessageDialog(Panel.this,
+                                        resource.getString("HomeAssistantFloorPlan.Panel.error.failedRendering.text") + " " + e,
+                                        resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                                        JOptionPane.ERROR_MESSAGE);
+                                }
+                            });
                         }
-                        EventQueue.invokeLater(new Runnable() {
-                            public void run() {
-                                setComponentsEnabled(true);
-                                renderExecutor = null;
-                            }
-                        });
                     }
                 });
             }
@@ -226,33 +266,47 @@ public class Panel extends JPanel implements DialogView {
 
     private JTree createTree(String rootName) {
         final JTree tree = new JTree(new DefaultMutableTreeNode(rootName)) {
-            @Override
-            protected void setExpandedState(TreePath path, boolean state) {
-                if (state) {
-                    super.setExpandedState(path, state);
-                }
-            }
         };
         tree.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent event) {
-                if (!tree.isEnabled())
-                    return;
-
-                TreePath selectedPath = tree.getSelectionPath();
-                if (selectedPath == null)
-                    return;
-
-                DefaultMutableTreeNode node = (DefaultMutableTreeNode)selectedPath.getLastPathComponent();
-                if (!node.isLeaf()) {
-                    tree.clearSelection();
-                    return;
-                }
-
-                if (event.getClickCount() != 2)
-                    return;
+            private void handleEvent(java.awt.event.MouseEvent event) {
+                TreePath path = tree.getPathForLocation(event.getX(), event.getY());
+                if (path == null) return;
+                DefaultMutableTreeNode node = (DefaultMutableTreeNode)path.getLastPathComponent();
+                if (!node.isLeaf()) return;
+                if (!(node.getUserObject() instanceof EntityNode)) return;
                 EntityNode entityNode = (EntityNode)node.getUserObject();
-                openEntityOptionsPanel(entityNode.entity);
+
+                if (event.isPopupTrigger()) {
+                    tree.setSelectionPath(path);
+                    JPopupMenu menu = new JPopupMenu();
+                    JMenuItem renameItem = new JMenuItem("Rename...");
+                    renameItem.addActionListener(e -> controller.openFurnitureProperties(entityNode.entity));
+                    JMenuItem optionsItem = new JMenuItem("Options...");
+                    optionsItem.addActionListener(e -> openEntityOptionsPanel(entityNode.entity));
+                    menu.add(renameItem);
+
+                    java.util.List<String> haIds = controller.getCachedHaEntityIds();
+                    if (!haIds.isEmpty() && !haIds.contains(entityNode.entity.getName())) {
+                        java.util.List<String> suggestions = controller.findSimilarEntities(entityNode.entity.getName(), 3);
+                        if (!suggestions.isEmpty()) {
+                            JMenu suggestMenu = new JMenu("Did you mean?");
+                            for (String suggestion : suggestions) {
+                                JMenuItem item = new JMenuItem(suggestion);
+                                item.addActionListener(e -> confirmAndRename(tree, path, entityNode.entity, suggestion));
+                                suggestMenu.add(item);
+                            }
+                            menu.add(suggestMenu);
+                        }
+                    }
+
+                    menu.add(optionsItem);
+                    menu.show(tree, event.getX(), event.getY());
+                } else if (event.getClickCount() == 2 && tree.isEnabled()) {
+                    openEntityOptionsPanel(entityNode.entity);
+                }
             }
+            public void mousePressed(java.awt.event.MouseEvent event) { handleEvent(event); }
+            public void mouseReleased(java.awt.event.MouseEvent event) { handleEvent(event); }
         });
         tree.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
             @Override
@@ -313,18 +367,20 @@ public class Panel extends JPanel implements DialogView {
 
         detectedLightsLabel = new JLabel(resource.getString("HomeAssistantFloorPlan.Panel.detectedLightsTreeLabel.text"));
         detectedLightsTree = createTree(resource.getString("HomeAssistantFloorPlan.Panel.detectedLightsTree.root.text"));
-        buildEntitiesGroupsTree(detectedLightsTree, controller.getLightsGroups());
+        {
+            List<Entity> allEntities = new ArrayList<>(controller.getLightEntities());
+            allEntities.addAll(controller.getOtherEntities());
+            buildEntitiesGroupsTree(detectedLightsTree, allEntities.stream()
+                .collect(Collectors.groupingBy(e -> e.getName().split("\\.")[0])));
+        }
 
         otherEntitiesLabel = new JLabel(resource.getString("HomeAssistantFloorPlan.Panel.otherEntitiesTreeLabel.text"));
         otherEntitiesTree = createTree(resource.getString("HomeAssistantFloorPlan.Panel.otherEntitiesTree.root.text"));
-        Map<String, List<Entity>> otherEntitiesGroupedByType = controller.getOtherEntities().stream()
-            .collect(Collectors.groupingBy(entity -> entity.getName().split("\\.")[0]));
-        buildEntitiesGroupsTree(otherEntitiesTree, otherEntitiesGroupedByType);
+        buildEntitiesGroupsTree(otherEntitiesTree, new java.util.HashMap<>());
 
         PropertyChangeListener updateTreeOnProperyChanged = new PropertyChangeListener() {
             public void propertyChange(PropertyChangeEvent ev) {
-                buildEntitiesGroupsTree(detectedLightsTree, controller.getLightsGroups());
-                buildEntitiesGroupsTree(otherEntitiesTree, otherEntitiesGroupedByType);
+                refreshTrees();
             }
         };
         controller.addPropertyChangeListener(Controller.Property.NUMBER_OF_RENDERS, updateTreeOnProperyChanged);
@@ -333,6 +389,28 @@ public class Panel extends JPanel implements DialogView {
             light.addPropertyChangeListener(Entity.Property.IS_RGB, updateTreeOnProperyChanged);
             light.addPropertyChangeListener(Entity.Property.DISPLAY_FURNITURE_CONDITION, updateTreeOnProperyChanged);
         }
+
+        cameraLabel = new JLabel("Camera:");
+        cameraComboBox = new JComboBox<>(controller.getAvailableCameras().toArray(new Camera[0]));
+        cameraComboBox.setSelectedItem(controller.getSelectedCamera());
+        cameraComboBox.setRenderer(new DefaultListCellRenderer() {
+            public Component getListCellRendererComponent(JList<?> jList, Object o, int i, boolean b, boolean b1) {
+                super.getListCellRendererComponent(jList, o, i, b, b1);
+                if (o instanceof Camera) {
+                    Camera cam = (Camera) o;
+                    String name = cam.getName();
+                    setText(name != null && !name.isEmpty() ? name : "(unnamed camera)");
+                }
+                return this;
+            }
+        });
+        cameraComboBox.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent ev) {
+                Camera selected = (Camera) cameraComboBox.getSelectedItem();
+                if (selected != null)
+                    controller.setSelectedCamera(selected);
+            }
+        });
 
         widthLabel = new JLabel();
         widthLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.widthLabel.text"));
@@ -526,6 +604,22 @@ public class Panel extends JPanel implements DialogView {
         });
         outputDirectoryBrowseButton = new JButton(actionMap.get(ActionType.BROWSE));
         outputDirectoryBrowseButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.browseButton.text"));
+        outputDirectoryOpenButton = new JButton("Open");
+        outputDirectoryOpenButton.setToolTipText("Open output directory in file manager");
+        outputDirectoryOpenButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                String dir = outputDirectoryTextField.getText();
+                if (dir.isEmpty()) return;
+                try {
+                    java.awt.Desktop.getDesktop().open(new java.io.File(dir));
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(Panel.this,
+                        "Could not open directory: " + ex.getMessage(),
+                        resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                        JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
         outputDirectoryChooser = new FileContentManager(preferences);
 
         haUrlLabel = new JLabel();
@@ -616,7 +710,7 @@ public class Panel extends JPanel implements DialogView {
             }
         });
 
-        showEntitiesButton = new JButton("Show entities");
+        showEntitiesButton = new JButton("Select entities");
         java.util.List<String> cached = controller.getCachedHaEntityIds();
         showEntitiesButton.setEnabled(!cached.isEmpty());
         showEntitiesButton.addActionListener(e -> showEntitiesList(controller.getCachedHaEntityIds()));
@@ -672,6 +766,7 @@ public class Panel extends JPanel implements DialogView {
         outputDirectoryTextField.setEnabled(enabled);
         outputDirectoryBrowseButton.setEnabled(enabled);
         useExistingRendersCheckbox.setEnabled(enabled);
+        cameraComboBox.setEnabled(enabled);
         if (enabled) {
             startButton.setAction(getActionMap().get(ActionType.START));
             startButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.startButton.text"));
@@ -707,6 +802,15 @@ public class Panel extends JPanel implements DialogView {
         add(otherEntitiesScrollPane, new GridBagConstraints(
             2, currentGridYIndex, 2, 1, 1, 1, GridBagConstraints.CENTER,
             GridBagConstraints.BOTH, insets, 0, 0));
+        currentGridYIndex++;
+
+        /* Camera selector */
+        add(cameraLabel, new GridBagConstraints(
+            0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        add(cameraComboBox, new GridBagConstraints(
+            1, currentGridYIndex, 3, 1, 1, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
         /* Resolution */
@@ -780,15 +884,6 @@ public class Panel extends JPanel implements DialogView {
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
-        /* Base folder */
-        add(baseFolderLabel, new GridBagConstraints(
-            0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(baseFolderTextField, new GridBagConstraints(
-            1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        currentGridYIndex++;
-
         /* Output directory */
         add(outputDirectoryLabel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
@@ -796,8 +891,20 @@ public class Panel extends JPanel implements DialogView {
         add(outputDirectoryTextField, new GridBagConstraints(
             1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(outputDirectoryBrowseButton, new GridBagConstraints(
-            3, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+        JPanel outputDirButtonPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 0));
+        outputDirButtonPanel.add(outputDirectoryBrowseButton);
+        outputDirButtonPanel.add(outputDirectoryOpenButton);
+        add(outputDirButtonPanel, new GridBagConstraints(
+            3, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.LINE_START,
+            GridBagConstraints.NONE, insets, 0, 0));
+        currentGridYIndex++;
+
+        /* Base folder */
+        add(baseFolderLabel, new GridBagConstraints(
+            0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        add(baseFolderTextField, new GridBagConstraints(
+            1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
@@ -900,31 +1007,243 @@ public class Panel extends JPanel implements DialogView {
             model.insertNodeInto(groupNode, root, root.getChildCount());
         }
 
-        for (int i = 0; i < tree.getRowCount(); i++) {
-            tree.expandRow(i);
-        }
+        tree.expandRow(0);
+    }
+
+    private void confirmAndRename(JTree tree, TreePath path, Entity entity, String suggestion) {
+        JTextField field = new JTextField(suggestion, 40);
+        JButton applyButton = new JButton("Apply");
+        JPanel panel = new JPanel(new BorderLayout(4, 0));
+        panel.add(new JLabel("New name:"), BorderLayout.WEST);
+        panel.add(field, BorderLayout.CENTER);
+        panel.add(applyButton, BorderLayout.EAST);
+
+        JOptionPane optionPane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE, JOptionPane.DEFAULT_OPTION, null, new Object[]{});
+        JDialog dialog = optionPane.createDialog(this, "Rename: " + entity.getName());
+        applyButton.addActionListener(e -> {
+            String newName = field.getText().trim();
+            if (!newName.isEmpty() && !newName.equals(entity.getName())) {
+                controller.renameEntity(entity, newName);
+                refreshTrees();
+            }
+            dialog.dispose();
+        });
+        field.addActionListener(e -> applyButton.doClick());
+        dialog.setVisible(true);
+    }
+
+    private void renameEntity(JTree tree, Entity entity) {
+        String newName = (String)JOptionPane.showInputDialog(this,
+            "New entity name:", "Rename entity",
+            JOptionPane.PLAIN_MESSAGE, null, null, entity.getName());
+        if (newName == null || newName.trim().isEmpty() || newName.equals(entity.getName()))
+            return;
+        controller.renameEntity(entity, newName.trim());
+        refreshTrees();
+    }
+
+    private void refreshTrees() {
+        List<Entity> allEntities = new ArrayList<>(controller.getLightEntities());
+        allEntities.addAll(controller.getOtherEntities());
+        buildEntitiesGroupsTree(detectedLightsTree, allEntities.stream()
+            .collect(Collectors.groupingBy(e -> e.getName().split("\\.")[0])));
+        checkEntities();
     }
 
     private void checkEntities() {
-        detectedLightsTree.repaint();
-        otherEntitiesTree.repaint();
+        List<String> haIds = controller.getCachedHaEntityIds();
+        DefaultMutableTreeNode root = new DefaultMutableTreeNode("HA Entities");
+        java.util.Map<String, DefaultMutableTreeNode> domains = new java.util.TreeMap<>();
+        for (String entityId : haIds) {
+            int dot = entityId.indexOf('.');
+            String domain = dot >= 0 ? entityId.substring(0, dot) : entityId;
+            String name = dot >= 0 ? entityId.substring(dot + 1) : entityId;
+            domains.computeIfAbsent(domain, d -> {
+                DefaultMutableTreeNode n = new DefaultMutableTreeNode(d);
+                root.add(n);
+                return n;
+            });
+            DefaultMutableTreeNode domainNode = domains.get(domain);
+            domainNode.add(new DefaultMutableTreeNode(name));
+            domainNode.setUserObject(domain + " (" + domainNode.getChildCount() + ")");
+        }
+        DefaultTreeModel model = (DefaultTreeModel) otherEntitiesTree.getModel();
+        model.setRoot(root);
+        model.reload();
+        otherEntitiesTree.expandRow(0);
+        ((DefaultTreeModel) detectedLightsTree.getModel()).reload();
+        detectedLightsTree.expandRow(0);
+    }
+
+    private static final java.util.Set<String> SUPPORTED_DOMAINS = new java.util.HashSet<>(
+        java.util.Arrays.asList("binary_sensor", "light", "switch", "sensor", "cover"));
+
+    private DefaultMutableTreeNode buildEntityTree(java.util.List<String> entities, String filter, java.util.Set<String> enabledDomains) {
+        String f = filter.toLowerCase();
+        DefaultMutableTreeNode root = new DefaultMutableTreeNode("Entities");
+        Map<String, DefaultMutableTreeNode> domains = new java.util.TreeMap<>();
+        for (String entityId : entities) {
+            int dot = entityId.indexOf('.');
+            String domain = dot >= 0 ? entityId.substring(0, dot) : entityId;
+            if (!enabledDomains.isEmpty() && !enabledDomains.contains(domain)) continue;
+            if (!f.isEmpty() && !entityId.toLowerCase().contains(f)) continue;
+            String name = dot >= 0 ? entityId.substring(dot + 1) : "";
+            domains.computeIfAbsent(domain, d -> {
+                DefaultMutableTreeNode n = new DefaultMutableTreeNode(d);
+                root.add(n);
+                return n;
+            });
+            domains.get(domain).add(new DefaultMutableTreeNode(name));
+            DefaultMutableTreeNode domainNode = domains.get(domain);
+            domainNode.setUserObject(domain + " (" + domainNode.getChildCount() + ")");
+        }
+        return root;
+    }
+
+    private java.util.Set<String> enabledDomains(java.util.Map<String, javax.swing.JCheckBox> checkboxes) {
+        java.util.Set<String> s = new java.util.HashSet<>();
+        checkboxes.forEach((d, cb) -> { if (cb.isSelected()) s.add(d); });
+        return s;
+    }
+
+    private int countLeaves(DefaultMutableTreeNode node) {
+        if (node.isLeaf()) return 1;
+        int count = 0;
+        for (int i = 0; i < node.getChildCount(); i++)
+            count += countLeaves((DefaultMutableTreeNode) node.getChildAt(i));
+        return count;
+    }
+
+    private java.util.Set<String> selectedDomains(java.util.Map<String, javax.swing.JCheckBoxMenuItem> items) {
+        java.util.Set<String> s = new java.util.HashSet<>();
+        items.forEach((d, item) -> { if (item.isSelected()) s.add(d); });
+        return s;
     }
 
     private void showEntitiesList(java.util.List<String> entities) {
-        JList<String> list = new JList<>(entities.toArray(new String[0]));
-        list.setVisibleRowCount(20);
-        JScrollPane scroll = new JScrollPane(list);
-        scroll.setPreferredSize(new java.awt.Dimension(400, 400));
-        JOptionPane.showMessageDialog(this,
-            scroll,
-            resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesDialog.title")
-                + " (" + entities.size() + ")",
-            JOptionPane.INFORMATION_MESSAGE);
+        java.util.Set<String> allDomains = new java.util.TreeSet<>();
+        for (String e : entities) { int d = e.indexOf('.'); if (d > 0) allDomains.add(e.substring(0, d)); }
+
+        java.util.Map<String, javax.swing.JCheckBoxMenuItem> domainItems = new java.util.LinkedHashMap<>();
+        JPopupMenu domainPopup = new JPopupMenu();
+        for (String domain : allDomains) {
+            javax.swing.JCheckBoxMenuItem item = new javax.swing.JCheckBoxMenuItem(domain, SUPPORTED_DOMAINS.contains(domain));
+            domainItems.put(domain, item);
+            domainPopup.add(item);
+        }
+
+        JButton filterButton = new JButton("Filter domains \u25bc");
+        filterButton.addActionListener(e ->
+            domainPopup.show(filterButton, 0, filterButton.getHeight()));
+
+        JTextField searchField = new JTextField(20);
+
+        JLabel countLabel = new JLabel();
+        countLabel.setForeground(java.awt.Color.GRAY);
+
+        Runnable[] refreshRef = new Runnable[1];
+        DefaultMutableTreeNode root = buildEntityTree(entities, "", selectedDomains(domainItems));
+        DefaultTreeModel model = new DefaultTreeModel(root);
+        JTree tree = new JTree(model);
+        tree.setRootVisible(false);
+
+        refreshRef[0] = () -> {
+            DefaultMutableTreeNode newRoot = buildEntityTree(entities, searchField.getText(), selectedDomains(domainItems));
+            model.setRoot(newRoot);
+            int shown = countLeaves(newRoot);
+            countLabel.setText(shown + " of " + entities.size());
+        };
+        refreshRef[0].run();
+        searchField.getDocument().addDocumentListener(new SimpleDocumentListener() {
+            @Override public void executeUpdate(DocumentEvent e) { refreshRef[0].run(); }
+        });
+        domainItems.values().forEach(item -> item.addActionListener(e -> refreshRef[0].run()));
+
+        JScrollPane scroll = new JScrollPane(tree);
+        scroll.setPreferredSize(new java.awt.Dimension(500, 420));
+
+        JPanel topRow = new JPanel(new BorderLayout(4, 0));
+        topRow.add(filterButton, BorderLayout.WEST);
+        topRow.add(searchField, BorderLayout.CENTER);
+        topRow.add(countLabel, BorderLayout.EAST);
+
+        JPanel top = new JPanel(new BorderLayout(0, 4));
+        top.add(topRow, BorderLayout.NORTH);
+
+        JPanel content = new JPanel(new BorderLayout(0, 4));
+        content.add(top, BorderLayout.NORTH);
+        content.add(scroll, BorderLayout.CENTER);
+
+        JOptionPane.showMessageDialog(this, content,
+            "Select entities",
+            JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private java.awt.image.BufferedImage scaleImage(java.awt.image.BufferedImage src, int maxW, int maxH) {
+        if (maxW <= 0 || maxH <= 0) return src;
+        double scale = Math.min((double)maxW / src.getWidth(), (double)maxH / src.getHeight());
+        int w = Math.max(1, (int)(src.getWidth() * scale));
+        int h = Math.max(1, (int)(src.getHeight() * scale));
+        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(w, h, src.getType());
+        out.createGraphics().drawImage(src.getScaledInstance(w, h, java.awt.Image.SCALE_FAST), 0, 0, null);
+        return out;
     }
 
     private void openEntityOptionsPanel(Entity entity) {
         EntityOptionsPanel entityOptionsPanel = new EntityOptionsPanel(preferences, entity);
         entityOptionsPanel.displayView(this);
+    }
+
+    private JDialog showRenderProgressWindow() {
+        JDialog win = new JDialog(SwingUtilities.getWindowAncestor(this),
+            resource.getString("HomeAssistantFloorPlan.Plugin.NAME") + " — Rendering",
+            java.awt.Dialog.ModalityType.MODELESS);
+        win.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+
+        JLabel previewLabel = new JLabel("Waiting for first render...", JLabel.CENTER);
+        previewLabel.setPreferredSize(new java.awt.Dimension(480, 270));
+        previewLabel.setBorder(LineBorder.createGrayLineBorder());
+
+        JProgressBar winProgress = new JProgressBar() {
+            @Override
+            public String getString() {
+                return String.format("%d / %d", getValue(), getMaximum());
+            }
+        };
+        winProgress.setStringPainted(true);
+        winProgress.setMinimum(0);
+        winProgress.setMaximum(controller.getNumberOfTotalRenders());
+        controller.addPropertyChangeListener(Controller.Property.COMPLETED_RENDERS, new PropertyChangeListener() {
+            public void propertyChange(PropertyChangeEvent ev) {
+                EventQueue.invokeLater(() -> winProgress.setValue(((Number)ev.getNewValue()).intValue()));
+            }
+        });
+        controller.addPropertyChangeListener(Controller.Property.RENDER_PREVIEW, new PropertyChangeListener() {
+            public void propertyChange(PropertyChangeEvent ev) {
+                java.awt.image.BufferedImage img = (java.awt.image.BufferedImage) ev.getNewValue();
+                if (img != null) {
+                    java.awt.image.BufferedImage scaled = scaleImage(img,
+                        previewLabel.getWidth() > 0 ? previewLabel.getWidth() : 480,
+                        previewLabel.getHeight() > 0 ? previewLabel.getHeight() : 270);
+                    EventQueue.invokeLater(() -> previewLabel.setIcon(new javax.swing.ImageIcon(scaled)));
+                }
+            }
+        });
+
+        JButton stopButton = new JButton(resource.getString("HomeAssistantFloorPlan.Panel.stopButton.text"));
+        stopButton.addActionListener(e -> stop());
+
+        JPanel south = new JPanel(new BorderLayout(4, 4));
+        south.add(winProgress, BorderLayout.CENTER);
+        south.add(stopButton, BorderLayout.EAST);
+
+        win.getContentPane().setLayout(new BorderLayout(0, 4));
+        win.getContentPane().add(previewLabel, BorderLayout.CENTER);
+        win.getContentPane().add(south, BorderLayout.SOUTH);
+        win.pack();
+        win.setLocationRelativeTo(SwingUtilities.getWindowAncestor(this));
+        win.setVisible(true);
+        return win;
     }
 
     private void stop() {
