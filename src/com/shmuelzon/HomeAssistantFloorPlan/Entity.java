@@ -118,7 +118,7 @@ public class Entity implements Comparable<Entity> {
     }
 
     public String getName() {
-        return name;
+        return piecesOfFurniture.get(0).getName();
     }
 
     public List<? extends HomePieceOfFurniture> getPiecesOfFurniture() {
