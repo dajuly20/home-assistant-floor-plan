@@ -12,11 +12,15 @@ import java.awt.Insets;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.time.LocalDate;
@@ -66,6 +70,8 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.TreePath;
+import javax.swing.event.TreeExpansionEvent;
+import javax.swing.event.TreeExpansionListener;
 
 import com.eteks.sweethome3d.model.Camera;
 import com.eteks.sweethome3d.model.UserPreferences;
@@ -96,10 +102,8 @@ public class Panel extends JPanel implements DialogView {
     private JTextField haSearchField;
     private JLabel cameraLabel;
     private JComboBox<com.eteks.sweethome3d.model.Camera> cameraComboBox;
-    private JLabel widthLabel;
-    private JSpinner widthSpinner;
-    private JLabel heightLabel;
-    private JSpinner heightSpinner;
+    private JLabel resolutionLabel;
+    private JTextField resolutionTextField;
     private JLabel lightMixingModeLabel;
     private JComboBox<Controller.LightMixingMode> lightMixingModeComboBox;
     private JLabel sensitivityLabel;
@@ -128,7 +132,9 @@ public class Panel extends JPanel implements DialogView {
     private JComboBox<String> haUrlProtocolComboBox;
     private JTextField haUrlTextField;
     private JLabel haEntityCountLabel;
+    private JLabel haLastFetchedLabel;
     private JButton haLoginButton;
+    private JLabel haTokenStatusLabel;
     private JButton fetchEntitiesButton;
     private JButton showEntitiesButton;
     private JCheckBox useExistingRendersCheckbox;
@@ -136,6 +142,8 @@ public class Panel extends JPanel implements DialogView {
     private JButton startButton;
     private JButton closeButton;
     private JButton checkEntitiesButton;
+    private JCheckBox sh3dAccordionCheckbox;
+    private JCheckBox haAccordionCheckbox;
 
     private class EntityNode {
         public Entity entity;
@@ -191,6 +199,16 @@ public class Panel extends JPanel implements DialogView {
         actions.put(ActionType.START, new ResourceAction(preferences, Panel.class, ActionType.START.name(), true) {
             @Override
             public void actionPerformed(ActionEvent ev) {
+                Camera selectedCamera = (Camera) cameraComboBox.getSelectedItem();
+                if (selectedCamera == null || (selectedCamera.getName() == null || selectedCamera.getName().isEmpty())) {
+                    int ok = JOptionPane.showConfirmDialog(Panel.this,
+                        "<html>No named camera perspective is selected.<br>" +
+                        "Using an unnamed camera may produce unexpected results.<br><br>" +
+                        "Continue anyway?</html>",
+                        resource.getString("HomeAssistantFloorPlan.Plugin.NAME"),
+                        JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                    if (ok != JOptionPane.YES_OPTION) return;
+                }
                 renderExecutor = Executors.newSingleThreadExecutor();
                 final JDialog progressWindow = showRenderProgressWindow();
                 renderExecutor.execute(new Runnable() {
@@ -457,31 +475,15 @@ public class Panel extends JPanel implements DialogView {
             }
         });
 
-        widthLabel = new JLabel();
-        widthLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.widthLabel.text"));
-        final SpinnerNumberModel widthSpinnerModel = new SpinnerNumberModel(1024, 10, 10000, 10);
-        widthSpinner = new AutoCommitSpinner(widthSpinnerModel);
-        widthSpinnerModel.setValue(controller.getRenderWidth());
-        widthSpinner.addChangeListener(new ChangeListener() {
-            public void stateChanged(ChangeEvent ev) {
-                controller.setRenderWidth(((Number)widthSpinnerModel.getValue()).intValue());
-            }
-        });
-
-        heightLabel = new JLabel();
-        heightLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.heightLabel.text"));
-        final SpinnerNumberModel heightSpinnerModel = new SpinnerNumberModel(576, 10, 10000, 10);
-        heightSpinner = new AutoCommitSpinner(heightSpinnerModel);
-        heightSpinnerModel.setValue(controller.getRenderHeight());
-        heightSpinner.addChangeListener(new ChangeListener() {
-            public void stateChanged(ChangeEvent ev) {
-              controller.setRenderHeight(((Number)heightSpinnerModel.getValue()).intValue());
-            }
+        resolutionLabel = new JLabel("Resolution:");
+        resolutionTextField = new JTextField(controller.getRenderWidth() + " x " + controller.getRenderHeight(), 12);
+        resolutionTextField.addActionListener(e -> applyResolution());
+        resolutionTextField.addFocusListener(new FocusAdapter() {
+            public void focusLost(FocusEvent e) { applyResolution(); }
         });
 
         lightMixingModeLabel = new JLabel();
         lightMixingModeLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.lightMixingModeLabel.text"));
-        lightMixingModeLabel.setToolTipText(resource.getString("HomeAssistantFloorPlan.Panel.lightMixingModeLabel.tooltip"));
         lightMixingModeComboBox = new JComboBox<Controller.LightMixingMode>(Controller.LightMixingMode.values());
         lightMixingModeComboBox.setSelectedItem(controller.getLightMixingMode());
         lightMixingModeComboBox.setRenderer(new DefaultListCellRenderer() {
@@ -566,7 +568,10 @@ public class Panel extends JPanel implements DialogView {
         renderTimeSpinner = new JSpinner(renderTimeModel);
         final JSpinner.DateEditor timeEditor = new JSpinner.DateEditor(renderTimeSpinner);
         timeEditor.getFormat().setTimeZone(timeZone);
-        timeEditor.getFormat().applyPattern("dd/MM/yyyy HH:mm");
+        java.text.SimpleDateFormat localDtFmt = (java.text.SimpleDateFormat)
+            java.text.DateFormat.getDateTimeInstance(
+                java.text.DateFormat.SHORT, java.text.DateFormat.SHORT, Locale.getDefault());
+        timeEditor.getFormat().applyPattern(localDtFmt.toPattern());
         timeEditor.getTextField().setHorizontalAlignment(JTextField.RIGHT);
         renderTimeSpinner.setEditor(timeEditor);
         final DateFormatter timeFormatter = (DateFormatter)timeEditor.getTextField().getFormatter();
@@ -576,6 +581,7 @@ public class Panel extends JPanel implements DialogView {
         renderTimeSpinner.addChangeListener(renderTimeChangeListener);
         nightRenderCheckbox = new JCheckBox();
         nightRenderCheckbox.setText(resource.getString("HomeAssistantFloorPlan.Panel.nightRender.text"));
+        nightRenderCheckbox.setToolTipText("<html>Add a second render pass at a different time-of-day.<br>Use this to generate a night-time floor plan for HA dark mode.</html>");
         nightRenderCheckbox.setBorder(null);
         nightRenderCheckbox.setSelected(renderingTimes.size() > 1);
         nightRenderCheckbox.addActionListener(new ActionListener() {
@@ -700,6 +706,7 @@ public class Panel extends JPanel implements DialogView {
                             EventQueue.invokeLater(() -> {
                                 haLoginButton.setEnabled(true);
                                 haLoginButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.haLoginButton.text"));
+                                updateTokenStatusLabel();
                                 triggerFetchEntities(true);
                             });
                         }
@@ -735,6 +742,9 @@ public class Panel extends JPanel implements DialogView {
             }
         });
 
+        haTokenStatusLabel = new JLabel();
+        updateTokenStatusLabel();
+
         fetchEntitiesButton = new JButton();
         fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
         fetchEntitiesButton.addActionListener(e -> triggerFetchEntities(true));
@@ -746,6 +756,9 @@ public class Panel extends JPanel implements DialogView {
 
         haEntityCountLabel = new JLabel(cached.isEmpty() ? "" : cached.size() + " entities");
         haEntityCountLabel.setForeground(java.awt.Color.GRAY);
+        haLastFetchedLabel = new JLabel();
+        haLastFetchedLabel.setForeground(java.awt.Color.GRAY);
+        updateLastFetchedLabel();
 
         progressBar = new JProgressBar() {
             @Override
@@ -776,13 +789,37 @@ public class Panel extends JPanel implements DialogView {
         closeButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.closeButton.text"));
         checkEntitiesButton = new JButton("Check entities");
         checkEntitiesButton.addActionListener(e -> checkEntities());
+
+        sh3dAccordionCheckbox = new JCheckBox("Accordion Mode", true);
+        haAccordionCheckbox = new JCheckBox("Accordion Mode", true);
+
+        detectedLightsTree.addTreeExpansionListener(new TreeExpansionListener() {
+            public void treeExpanded(TreeExpansionEvent e) {
+                if (!sh3dAccordionCheckbox.isSelected()) return;
+                collapseOtherDomains(detectedLightsTree, e.getPath());
+            }
+            public void treeCollapsed(TreeExpansionEvent e) {}
+        });
+        otherEntitiesTree.addTreeExpansionListener(new TreeExpansionListener() {
+            public void treeExpanded(TreeExpansionEvent e) {
+                if (!haAccordionCheckbox.isSelected()) return;
+                collapseOtherDomains(otherEntitiesTree, e.getPath());
+            }
+            public void treeCollapsed(TreeExpansionEvent e) {}
+        });
+
+        sh3dAccordionCheckbox.addActionListener(e -> {
+            if (sh3dAccordionCheckbox.isSelected()) expandFirstDomain(detectedLightsTree);
+        });
+        haAccordionCheckbox.addActionListener(e -> {
+            if (haAccordionCheckbox.isSelected()) expandFirstDomain(otherEntitiesTree);
+        });
     }
 
     private void setComponentsEnabled(boolean enabled) {
         detectedLightsTree.setEnabled(enabled);
         otherEntitiesTree.setEnabled(enabled);
-        widthSpinner.setEnabled(enabled);
-        heightSpinner.setEnabled(enabled);
+        resolutionTextField.setEnabled(enabled);
         lightMixingModeComboBox.setEnabled(enabled);
         sensitivitySpinner.setEnabled(enabled);
         rendererComboBox.setEnabled(enabled);
@@ -842,6 +879,15 @@ public class Panel extends JPanel implements DialogView {
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
+        /* Accordion mode checkboxes */
+        add(sh3dAccordionCheckbox, new GridBagConstraints(
+            0, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.WEST,
+            GridBagConstraints.NONE, insets, 0, 0));
+        add(haAccordionCheckbox, new GridBagConstraints(
+            2, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.WEST,
+            GridBagConstraints.NONE, insets, 0, 0));
+        currentGridYIndex++;
+
         /* Camera selector */
         add(cameraLabel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
@@ -852,30 +898,40 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         /* Resolution */
-        add(widthLabel, new GridBagConstraints(
+        add(resolutionLabel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        widthLabel.setHorizontalAlignment(labelAlignment);
-        add(widthSpinner, new GridBagConstraints(
-            1, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.LINE_START,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(heightLabel, new GridBagConstraints(
-            2, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        heightLabel.setHorizontalAlignment(labelAlignment);
-        add(heightSpinner, new GridBagConstraints(
-            3, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.LINE_START,
+        add(resolutionTextField, new GridBagConstraints(
+            1, currentGridYIndex, 3, 1, 1, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
         /* Light mixing mode + render time */
-        add(lightMixingModeLabel, new GridBagConstraints(
+        add(labelWithHelp(lightMixingModeLabel,
+            "<html><b>How multiple light states are combined:</b><br><br>" +
+            "<b>CSS</b> &mdash; Each light is rendered separately. The browser uses CSS<br>" +
+            "&nbsp;&nbsp;mix-blend-mode to combine them live. Fewest renders: O(N lights).<br>" +
+            "&nbsp;&nbsp;Best performance, good for many independent lights.<br><br>" +
+            "<b>Room overlay</b> &mdash; All light combinations within each room are<br>" +
+            "&nbsp;&nbsp;pre-rendered as PNG overlays. Better quality per room.<br><br>" +
+            "<b>Complete renders</b> &mdash; Every on/off combination of all lights is<br>" +
+            "&nbsp;&nbsp;rendered. Best quality but exponential render count &mdash;<br>" +
+            "&nbsp;&nbsp;only practical with very few lights.</html>"),
+            new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(lightMixingModeComboBox, new GridBagConstraints(
             1, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(renderTimeLabel, new GridBagConstraints(
+        add(labelWithHelp(renderTimeLabel,
+            "<html><b>Simulated date &amp; time for sun position / daylight color.</b><br><br>" +
+            "<b>This is NOT the render duration!</b> It controls the sun angle<br>" +
+            "and natural light color used during ray tracing.<br><br>" +
+            "Examples:<br>" +
+            "&nbsp;&bull; Noon in summer &rarr; bright overhead daylight<br>" +
+            "&nbsp;&bull; Late afternoon &rarr; warm golden shadows<br>" +
+            "&nbsp;&bull; Night-time render adds a second timestamp for dark mode.</html>"),
+            new GridBagConstraints(
             2, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(renderTimeSpinner, new GridBagConstraints(
@@ -884,7 +940,17 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         /* Renderer + Night render*/
-        add(rendererLabel, new GridBagConstraints(
+        add(labelWithHelp(rendererLabel,
+            "<html><b>Ray-tracing engine used to render each image:</b><br><br>" +
+            "<b>YafaRay</b> &mdash; Modern renderer, generally faster and higher quality.<br>" +
+            "&nbsp;&nbsp;Recommended for most use cases.<br><br>" +
+            "<b>SunFlow</b> &mdash; The original SweetHome3D renderer. Slower,<br>" +
+            "&nbsp;&nbsp;but may produce a different look.<br><br>" +
+            "Render duration per image varies by machine, resolution and scene.<br>" +
+            "Rough estimates (YafaRay, 1024&times;576):<br>" +
+            "&nbsp;&bull; Low quality: ~30 sec &ndash; 3 min<br>" +
+            "&nbsp;&bull; High quality: ~5 &ndash; 30 min</html>"),
+            new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(rendererComboBox, new GridBagConstraints(
@@ -899,13 +965,28 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         /* Image format + Quality */
-        add(imageFormatLabel, new GridBagConstraints(
+        add(labelWithHelp(imageFormatLabel,
+            "<html><b>Output image format for floor plan images:</b><br><br>" +
+            "<b>PNG</b> &mdash; Lossless, supports transparency.<br>" +
+            "&nbsp;&nbsp;Required for Room overlay mode. Larger file size.<br><br>" +
+            "<b>JPEG</b> &mdash; Lossy compression, smaller files.<br>" +
+            "&nbsp;&nbsp;Cannot be used with Room overlay (no transparency).</html>"),
+            new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(imageFormatComboBox, new GridBagConstraints(
             1, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(qualityLabel, new GridBagConstraints(
+        add(labelWithHelp(qualityLabel,
+            "<html><b>Ray sampling quality per rendered image:</b><br><br>" +
+            "<b>High</b> &mdash; More ray samples. Smoother shadows, less noise.<br>" +
+            "&nbsp;&nbsp;Significantly slower. Use for final output.<br><br>" +
+            "<b>Low</b> &mdash; Fewer samples. Faster but grainy.<br>" +
+            "&nbsp;&nbsp;Good for test/preview runs.<br><br>" +
+            "Typical times per image (varies by machine &amp; scene):<br>" +
+            "&nbsp;&bull; Low:&nbsp;&nbsp;~30 sec &ndash; 3 min<br>" +
+            "&nbsp;&bull; High: ~5 &ndash; 30 min</html>"),
+            new GridBagConstraints(
             2, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(qualityComboBox, new GridBagConstraints(
@@ -914,7 +995,14 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         /* Sensitivity */
-        add(sensitivityLabel, new GridBagConstraints(
+        add(labelWithHelp(sensitivityLabel,
+            "<html><b>Pixel difference threshold for light overlay images (0&ndash;100):</b><br><br>" +
+            "When computing a light overlay, pixels where the lit and unlit renders<br>" +
+            "differ by more than this value are included in the overlay layer.<br><br>" +
+            "&nbsp;&bull; <b>Lower</b> value &rarr; more sensitive, picks up subtle light changes<br>" +
+            "&nbsp;&bull; <b>Higher</b> value &rarr; only strong brightness differences included<br><br>" +
+            "Default: 10. Increase if you see unwanted ambient bleed in overlays.</html>"),
+            new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(sensitivitySpinner, new GridBagConstraints(
@@ -923,7 +1011,14 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         /* Output directory */
-        add(outputDirectoryLabel, new GridBagConstraints(
+        JPanel outputDirLabelPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 0));
+        outputDirLabelPanel.add(outputDirectoryLabel);
+        outputDirLabelPanel.add(createHelpButton("<html>Local folder where rendered images and the floor plan YAML will be saved.<br><br>" +
+            "If a camera name is set, a subfolder with that name is created automatically.<br>" +
+            "The output structure is:<br>" +
+            "<tt>&nbsp;&nbsp;&lt;output dir&gt;/&lt;camera&gt;/renders/</tt><br>" +
+            "<tt>&nbsp;&nbsp;&lt;output dir&gt;/&lt;camera&gt;/floorplan/</tt></html>"));
+        add(outputDirLabelPanel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(outputDirectoryTextField, new GridBagConstraints(
@@ -938,7 +1033,13 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         /* Base folder */
-        add(baseFolderLabel, new GridBagConstraints(
+        add(labelWithHelp(baseFolderLabel,
+            "<html><b>Home Assistant www folder path prefix for generated YAML image URLs.</b><br><br>" +
+            "Set this to the path (relative to HA <tt>www/</tt>) where you copy the output files.<br><br>" +
+            "Example: if you copy to <tt>config/www/floorplan/</tt>, set this to <tt>floorplan</tt><br>" +
+            "→ YAML image paths will be <tt>/local/floorplan/&lt;camera&gt;/floorplan/...</tt><br><br>" +
+            "Leave empty to use paths starting directly at <tt>/local/</tt>.</html>"),
+            new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(baseFolderTextField, new GridBagConstraints(
@@ -950,7 +1051,16 @@ public class Panel extends JPanel implements DialogView {
         JPanel haUrlPanel = new JPanel(new BorderLayout(0, 0));
         haUrlPanel.add(haUrlProtocolComboBox, BorderLayout.WEST);
         haUrlPanel.add(haUrlTextField, BorderLayout.CENTER);
-        add(haUrlLabel, new GridBagConstraints(
+        JPanel haUrlLabelPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 0));
+        haUrlLabelPanel.add(haUrlLabel);
+        haUrlLabelPanel.add(createHelpButton("<html>The URL of your Home Assistant instance.<br><br>" +
+            "Examples:<br>" +
+            "<tt>&nbsp;&nbsp;http://homeassistant.local:8123</tt><br>" +
+            "<tt>&nbsp;&nbsp;https://myhome.duckdns.org</tt><br><br>" +
+            "If you use <b>HTTPS</b>: OAuth login is not supported.<br>" +
+            "Create a Long-Lived Access Token in your HA profile<br>" +
+            "and paste it into the HA API Token field.</html>"));
+        add(haUrlLabelPanel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(haUrlPanel, new GridBagConstraints(
@@ -961,6 +1071,9 @@ public class Panel extends JPanel implements DialogView {
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
+        add(haTokenStatusLabel, new GridBagConstraints(
+            0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
         add(fetchEntitiesButton, new GridBagConstraints(
             1, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
@@ -970,7 +1083,10 @@ public class Panel extends JPanel implements DialogView {
         currentGridYIndex++;
 
         add(haEntityCountLabel, new GridBagConstraints(
-            1, currentGridYIndex, 3, 1, 0, 0, GridBagConstraints.WEST,
+            1, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.WEST,
+            GridBagConstraints.NONE, insets, 0, 0));
+        add(haLastFetchedLabel, new GridBagConstraints(
+            2, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.WEST,
             GridBagConstraints.NONE, insets, 0, 0));
         currentGridYIndex++;
 
@@ -1045,8 +1161,15 @@ public class Panel extends JPanel implements DialogView {
             model.insertNodeInto(groupNode, root, root.getChildCount());
         }
 
-        for (int i = 0; i < tree.getRowCount(); i++)
-            tree.expandRow(i);
+        boolean accordion = (tree == detectedLightsTree)
+            ? (sh3dAccordionCheckbox != null && sh3dAccordionCheckbox.isSelected())
+            : (haAccordionCheckbox != null && haAccordionCheckbox.isSelected());
+        if (accordion) {
+            expandFirstDomain(tree);
+        } else {
+            for (int i = 0; i < tree.getRowCount(); i++)
+                tree.expandRow(i);
+        }
     }
 
     private void confirmAndRename(JTree tree, TreePath path, Entity entity, String suggestion) {
@@ -1102,7 +1225,7 @@ public class Panel extends JPanel implements DialogView {
     }
 
     private void checkEntities() {
-        List<String> haIds = controller.getCachedHaEntityIds();
+        List<String> haIds = controller.getHaSelectedEntityIds();
         java.util.Set<String> sh3dIds = new java.util.HashSet<>();
         for (Entity e : controller.getLightEntities()) sh3dIds.add(e.getName());
         for (Entity e : controller.getOtherEntities()) sh3dIds.add(e.getName());
@@ -1140,11 +1263,19 @@ public class Panel extends JPanel implements DialogView {
         DefaultTreeModel model = (DefaultTreeModel) otherEntitiesTree.getModel();
         model.setRoot(root);
         model.reload();
-        for (int i = 0; i < otherEntitiesTree.getRowCount(); i++)
-            otherEntitiesTree.expandRow(i);
+        if (haAccordionCheckbox != null && haAccordionCheckbox.isSelected()) {
+            expandFirstDomain(otherEntitiesTree);
+        } else {
+            for (int i = 0; i < otherEntitiesTree.getRowCount(); i++)
+                otherEntitiesTree.expandRow(i);
+        }
         ((DefaultTreeModel) detectedLightsTree.getModel()).reload();
-        for (int i = 0; i < detectedLightsTree.getRowCount(); i++)
-            detectedLightsTree.expandRow(i);
+        if (sh3dAccordionCheckbox != null && sh3dAccordionCheckbox.isSelected()) {
+            expandFirstDomain(detectedLightsTree);
+        } else {
+            for (int i = 0; i < detectedLightsTree.getRowCount(); i++)
+                detectedLightsTree.expandRow(i);
+        }
     }
 
     private static final java.util.Set<String> SUPPORTED_DOMAINS = new java.util.HashSet<>(
@@ -1334,6 +1465,81 @@ public class Panel extends JPanel implements DialogView {
         java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
     }
 
+    private void collapseOtherDomains(JTree tree, TreePath expandedPath) {
+        if (expandedPath.getPathCount() != 2) return; // only act on domain-level nodes
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) tree.getModel().getRoot();
+        for (int i = 0; i < root.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) root.getChildAt(i);
+            TreePath childPath = new TreePath(child.getPath());
+            if (!childPath.equals(expandedPath))
+                tree.collapsePath(childPath);
+        }
+    }
+
+    private void expandFirstDomain(JTree tree) {
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) tree.getModel().getRoot();
+        if (root.getChildCount() > 0) {
+            // collapse all first
+            for (int i = 0; i < root.getChildCount(); i++)
+                tree.collapsePath(new TreePath(((DefaultMutableTreeNode) root.getChildAt(i)).getPath()));
+            // then expand first
+            DefaultMutableTreeNode first = (DefaultMutableTreeNode) root.getChildAt(0);
+            tree.expandPath(new TreePath(first.getPath()));
+        }
+    }
+
+    private JPanel labelWithHelp(JLabel label, String message) {
+        JPanel p = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 0));
+        p.add(label);
+        p.add(createHelpButton(message));
+        return p;
+    }
+
+    private JButton createHelpButton(String message) {
+        JButton btn = new JButton("?");
+        btn.setMargin(new java.awt.Insets(0, 4, 0, 4));
+        btn.setFont(btn.getFont().deriveFont(java.awt.Font.BOLD, 10f));
+        btn.setFocusPainted(false);
+        btn.addActionListener(e ->
+            JOptionPane.showMessageDialog(Panel.this, message, "Help", JOptionPane.INFORMATION_MESSAGE));
+        return btn;
+    }
+
+    private void applyResolution() {
+        Matcher m = Pattern.compile("(\\d+)\\s*[xX\u00d7]\\s*(\\d+)").matcher(resolutionTextField.getText().trim());
+        if (m.find()) {
+            int w = Integer.parseInt(m.group(1));
+            int h = Integer.parseInt(m.group(2));
+            if (w >= 10 && h >= 10 && w <= 10000 && h <= 10000) {
+                controller.setRenderWidth(w);
+                controller.setRenderHeight(h);
+                resolutionTextField.setText(w + " x " + h);
+                return;
+            }
+        }
+        resolutionTextField.setText(controller.getRenderWidth() + " x " + controller.getRenderHeight());
+    }
+
+    private void updateLastFetchedLabel() {
+        long t = controller.getHaEntityCacheTime();
+        if (t == 0) {
+            haLastFetchedLabel.setText("");
+        } else {
+            java.text.DateFormat fmt = java.text.DateFormat.getDateTimeInstance(
+                java.text.DateFormat.MEDIUM, java.text.DateFormat.MEDIUM, Locale.getDefault());
+            haLastFetchedLabel.setText("Last fetch: " + fmt.format(new java.util.Date(t)));
+        }
+    }
+
+    private void updateTokenStatusLabel() {
+        String token = controller.getHaApiToken();
+        if (token != null && !token.isEmpty()) {
+            haTokenStatusLabel.setText("<html><font color='green'>&#9679; Connected</font></html>");
+        } else {
+            haTokenStatusLabel.setText("<html><font color='gray'>&#9679; Not logged in</font></html>");
+        }
+    }
+
     private void triggerFetchEntities(boolean showListAfter) {
         fetchEntitiesButton.setEnabled(false);
         fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.loading.text"));
@@ -1345,6 +1551,7 @@ public class Panel extends JPanel implements DialogView {
                     fetchEntitiesButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.fetchEntitiesButton.text"));
                     showEntitiesButton.setEnabled(true);
                     haEntityCountLabel.setText(entities.size() + " entities");
+                    updateLastFetchedLabel();
                     checkEntities();
                     if (showListAfter)
                         showEntitiesList(entities);

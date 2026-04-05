@@ -401,16 +401,47 @@ public class Controller {
         return cachedHaEntityIds;
     }
 
+    public List<String> getHaSelectedEntityIds() {
+        Set<String> sh3dDomains = new HashSet<>();
+        for (Entity e : lightEntities) {
+            String name = e.getName();
+            int dot = name.indexOf('.');
+            if (dot >= 0) sh3dDomains.add(name.substring(0, dot));
+        }
+        for (Entity e : otherEntities) {
+            String name = e.getName();
+            int dot = name.indexOf('.');
+            if (dot >= 0) sh3dDomains.add(name.substring(0, dot));
+        }
+        if (sh3dDomains.isEmpty()) return cachedHaEntityIds;
+        return cachedHaEntityIds.stream()
+            .filter(id -> {
+                int dot = id.indexOf('.');
+                String domain = dot >= 0 ? id.substring(0, dot) : id;
+                return sh3dDomains.contains(domain);
+            })
+            .collect(Collectors.toList());
+    }
+
     private static final String CONTROLLER_HA_ENTITY_CACHE = "haEntityCache";
+    private static final String CONTROLLER_HA_ENTITY_CACHE_TIME = "haEntityCacheTime";
+    private long haEntityCacheTime = 0;
 
     private void saveEntityCache(List<String> entityIds) {
         settings.set(CONTROLLER_HA_ENTITY_CACHE, String.join(",", entityIds));
+        haEntityCacheTime = System.currentTimeMillis();
+        settings.setLong(CONTROLLER_HA_ENTITY_CACHE_TIME, haEntityCacheTime);
     }
 
     private void loadEntityCache() {
         String cached = settings.get(CONTROLLER_HA_ENTITY_CACHE, "");
         if (!cached.isEmpty())
             cachedHaEntityIds = new ArrayList<>(Arrays.asList(cached.split(",")));
+        haEntityCacheTime = settings.getLong(CONTROLLER_HA_ENTITY_CACHE_TIME, 0);
+    }
+
+    public long getHaEntityCacheTime() {
+        return haEntityCacheTime;
     }
 
     public interface OAuthCallback {
