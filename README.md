@@ -55,7 +55,7 @@ Renders a separate image for every possible light combination across the entire 
 
 ## Configuration Options
 
-<img src="doc/options.png" alt="Plugin configuration options window" />
+<img src="doc/plugin-ui.png" alt="Plugin configuration window with Home Assistant integration" />
 
 The configuration window shows two side-by-side trees:
 
