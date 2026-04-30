@@ -353,9 +353,15 @@ public class Panel extends JPanel implements DialogView {
         tree.putClientProperty("JTree.lineStyle", "Angled");
         tree.setCellRenderer(new DefaultTreeCellRenderer() {
             {
-                setLeafIcon(null);
-                setOpenIcon(null);
-                setClosedIcon(null);
+                // Use empty icon instead of null to avoid NullPointerException in newer Java versions
+                javax.swing.Icon emptyIcon = new javax.swing.Icon() {
+                    public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {}
+                    public int getIconWidth() { return 0; }
+                    public int getIconHeight() { return 0; }
+                };
+                setLeafIcon(emptyIcon);
+                setOpenIcon(emptyIcon);
+                setClosedIcon(emptyIcon);
             }
             @Override
             public Component getTreeCellRendererComponent(JTree t, Object value, boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
@@ -419,7 +425,17 @@ public class Panel extends JPanel implements DialogView {
             public void mouseReleased(java.awt.event.MouseEvent event) { handleEvent(event); }
         });
         otherEntitiesTree.setCellRenderer(new DefaultTreeCellRenderer() {
-            { setLeafIcon(null); setOpenIcon(null); setClosedIcon(null); }
+            {
+                // Use empty icon instead of null to avoid NullPointerException in newer Java versions
+                javax.swing.Icon emptyIcon = new javax.swing.Icon() {
+                    public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {}
+                    public int getIconWidth() { return 0; }
+                    public int getIconHeight() { return 0; }
+                };
+                setLeafIcon(emptyIcon);
+                setOpenIcon(emptyIcon);
+                setClosedIcon(emptyIcon);
+            }
             @Override
             public Component getTreeCellRendererComponent(JTree t, Object value, boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
                 super.getTreeCellRendererComponent(t, value, sel, expanded, leaf, row, hasFocus);
