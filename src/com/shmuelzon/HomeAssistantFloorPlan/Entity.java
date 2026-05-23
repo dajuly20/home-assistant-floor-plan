@@ -648,7 +648,7 @@ public class Entity implements Comparable<Entity> {
     }
 
     private DisplayType defaultDisplayType() {
-        return name.startsWith("sensor.") ? DisplayType.LABEL : DisplayType.ICON;
+        return (name.startsWith("sensor.") || name.startsWith("person.")) ? DisplayType.LABEL : DisplayType.ICON;
     }
 
     public int compareTo(Entity other) {

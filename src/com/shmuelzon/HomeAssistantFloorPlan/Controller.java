@@ -825,6 +825,7 @@ public class Controller {
             "light.",
             "lock.",
             "media_player.",
+            "person.",
             "remote.",
             "sensor.",
             "siren.",

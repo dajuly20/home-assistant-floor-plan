@@ -1304,7 +1304,7 @@ public class Panel extends JPanel implements DialogView {
     }
 
     private static final java.util.Set<String> SUPPORTED_DOMAINS = new java.util.HashSet<>(
-        java.util.Arrays.asList("binary_sensor", "light", "switch", "sensor", "cover"));
+        java.util.Arrays.asList("binary_sensor", "light", "switch", "sensor", "cover", "person"));
 
     private DefaultMutableTreeNode buildEntityTree(java.util.List<String> entities, String filter, java.util.Set<String> enabledDomains) {
         String f = filter.toLowerCase();
