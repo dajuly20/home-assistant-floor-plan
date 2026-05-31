@@ -146,6 +146,7 @@ public class Panel extends JPanel implements DialogView {
     private JCheckBox haAccordionCheckbox;
     private JButton sh3dCollapseButton;
     private JButton haCollapseButton;
+    private long renderStartTime;
 
     private class EntityNode {
         public Entity entity;
@@ -212,6 +213,7 @@ public class Panel extends JPanel implements DialogView {
                     if (ok != JOptionPane.YES_OPTION) return;
                 }
                 renderExecutor = Executors.newSingleThreadExecutor();
+                renderStartTime = System.currentTimeMillis();
                 final JDialog progressWindow = showRenderProgressWindow();
                 renderExecutor.execute(new Runnable() {
                     public void run() {
@@ -223,9 +225,11 @@ public class Panel extends JPanel implements DialogView {
                                     progressWindow.dispose();
                                     setComponentsEnabled(true);
                                     renderExecutor = null;
+                                    long elapsedSec = (System.currentTimeMillis() - renderStartTime) / 1000;
+                                    String elapsedStr = String.format("%02d:%02d", elapsedSec / 60, elapsedSec % 60);
                                     int choice = JOptionPane.showConfirmDialog(Panel.this,
                                         resource.getString("HomeAssistantFloorPlan.Panel.info.finishedRendering.text")
-                                            + "\n" + resource.getString("HomeAssistantFloorPlan.Panel.info.openFolder.text"),
+                                            + " (" + elapsedStr + ")\n" + resource.getString("HomeAssistantFloorPlan.Panel.info.openFolder.text"),
                                         resource.getString("HomeAssistantFloorPlan.Plugin.NAME"),
                                         JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
                                     if (choice == JOptionPane.YES_OPTION) {
@@ -1686,11 +1690,27 @@ public class Panel extends JPanel implements DialogView {
             }
         });
 
+        JLabel timerLabel = new JLabel("00:00", JLabel.RIGHT);
+        timerLabel.setFont(timerLabel.getFont().deriveFont(java.awt.Font.BOLD));
+        javax.swing.Timer swingTimer = new javax.swing.Timer(1000, null);
+        swingTimer.addActionListener(e -> {
+            long elapsed = (System.currentTimeMillis() - renderStartTime) / 1000;
+            timerLabel.setText(String.format("%02d:%02d", elapsed / 60, elapsed % 60));
+        });
+        swingTimer.start();
+        win.addWindowListener(new java.awt.event.WindowAdapter() {
+            public void windowClosed(java.awt.event.WindowEvent e) { swingTimer.stop(); }
+        });
+
         JButton stopButton = new JButton(resource.getString("HomeAssistantFloorPlan.Panel.stopButton.text"));
         stopButton.addActionListener(e -> stop());
 
+        JPanel progressRow = new JPanel(new BorderLayout(6, 0));
+        progressRow.add(winProgress, BorderLayout.CENTER);
+        progressRow.add(timerLabel, BorderLayout.EAST);
+
         JPanel south = new JPanel(new BorderLayout(4, 4));
-        south.add(winProgress, BorderLayout.CENTER);
+        south.add(progressRow, BorderLayout.CENTER);
         south.add(stopButton, BorderLayout.EAST);
 
         win.getContentPane().setLayout(new BorderLayout(0, 4));
