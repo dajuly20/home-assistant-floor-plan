@@ -531,6 +531,8 @@ public class Entity implements Comparable<Entity> {
             additionalYaml = String.format("    icon: %s\n", iconOverride);
         if (displayType == DisplayType.LABEL && !attribute.isEmpty())
             additionalYaml = String.format("    attribute: %s\n", attribute);
+        if (name.startsWith("person."))
+            additionalYaml += String.format("    prefix: \"👤 %s: \"\n", title);
 
         String yaml = String.format(Locale.US,
             "  - type: %s\n" +
@@ -630,7 +632,20 @@ public class Entity implements Comparable<Entity> {
         doubleTapActionValue = settings.get(name + "." + SETTING_NAME_DOUBLE_TAP_ACTION_VALUE, "");
         holdAction = getSavedEnumValue(Action.class, name + "." + SETTING_NAME_HOLD_ACTION, Action.MORE_INFO);
         holdActionValue = settings.get(name + "." + SETTING_NAME_HOLD_ACTION_VALUE, "");
-        title = firstPiece.getDescription();
+        String description = firstPiece.getDescription();
+        if (description != null && !description.isEmpty()) {
+            title = description;
+        } else if (name != null && name.contains(".")) {
+            String localPart = name.substring(name.indexOf('.') + 1);
+            StringBuilder sb = new StringBuilder();
+            for (String part : localPart.split("_")) {
+                if (sb.length() > 0) sb.append(' ');
+                if (!part.isEmpty()) sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+            }
+            title = sb.toString();
+        } else {
+            title = name;
+        }
         opacity = settings.getInteger(name + "." + SETTING_NAME_OPACITY, 100);
         scale = settings.getInteger(name + "." + SETTING_NAME_SCALE, 100);
         backgroundColor = settings.get(name + "." + SETTING_NAME_BACKGROUND_COLOR, "rgba(255, 255, 255, 0.3)");

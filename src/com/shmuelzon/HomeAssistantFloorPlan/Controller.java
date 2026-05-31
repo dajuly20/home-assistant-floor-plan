@@ -181,6 +181,17 @@ public class Controller {
             } catch (Exception e) {
                 // keep camera as-is if saved values are corrupt
             }
+        } else {
+            // No camera saved yet - save the current camera position
+            String name = camera.getName();
+            settings.set(CONTROLLER_CAMERA_NAME, name != null ? name : "");
+            settings.set(CONTROLLER_CAMERA_X, String.valueOf(camera.getX()));
+            settings.set(CONTROLLER_CAMERA_Y, String.valueOf(camera.getY()));
+            settings.set(CONTROLLER_CAMERA_Z, String.valueOf(camera.getZ()));
+            settings.set(CONTROLLER_CAMERA_YAW, String.valueOf(camera.getYaw()));
+            settings.set(CONTROLLER_CAMERA_PITCH, String.valueOf(camera.getPitch()));
+            settings.set(CONTROLLER_CAMERA_FOV, String.valueOf(camera.getFieldOfView()));
+            settings.set(CONTROLLER_CAMERA_LENS, camera.getLens().name());
         }
         rebuildOutputPaths();
     }
@@ -208,6 +219,29 @@ public class Controller {
         settings.set(CONTROLLER_CAMERA_PITCH, String.valueOf(camera.getPitch()));
         settings.set(CONTROLLER_CAMERA_FOV, String.valueOf(camera.getFieldOfView()));
         settings.set(CONTROLLER_CAMERA_LENS, camera.getLens().name());
+        rebuildOutputPaths();
+        repositionEntities();
+        buildScenes();
+    }
+
+    /**
+     * Sync the plugin camera with the current SweetHome3D 3D view camera.
+     */
+    public void syncCameraFromHome() {
+        Camera currentCamera = home.getCamera();
+        camera = currentCamera.clone();
+
+        // Save the synced position
+        String name = camera.getName();
+        settings.set(CONTROLLER_CAMERA_NAME, name != null ? name : "");
+        settings.set(CONTROLLER_CAMERA_X, String.valueOf(camera.getX()));
+        settings.set(CONTROLLER_CAMERA_Y, String.valueOf(camera.getY()));
+        settings.set(CONTROLLER_CAMERA_Z, String.valueOf(camera.getZ()));
+        settings.set(CONTROLLER_CAMERA_YAW, String.valueOf(camera.getYaw()));
+        settings.set(CONTROLLER_CAMERA_PITCH, String.valueOf(camera.getPitch()));
+        settings.set(CONTROLLER_CAMERA_FOV, String.valueOf(camera.getFieldOfView()));
+        settings.set(CONTROLLER_CAMERA_LENS, camera.getLens().name());
+
         rebuildOutputPaths();
         repositionEntities();
         buildScenes();
