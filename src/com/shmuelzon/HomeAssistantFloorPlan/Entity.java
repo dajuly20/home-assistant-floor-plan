@@ -531,8 +531,12 @@ public class Entity implements Comparable<Entity> {
             additionalYaml = String.format("    icon: %s\n", iconOverride);
         if (displayType == DisplayType.LABEL && !attribute.isEmpty())
             additionalYaml = String.format("    attribute: %s\n", attribute);
-        if (name.startsWith("person."))
-            additionalYaml += String.format("    prefix: \"👤 %s: \"\n", title);
+        if (name.startsWith("person.")) {
+            StringBuilder initials = new StringBuilder();
+            for (String word : title.split("\\s+"))
+                if (!word.isEmpty()) initials.append(Character.toUpperCase(word.charAt(0)));
+            additionalYaml += String.format("    prefix: \"👤 %s: \"\n", initials.toString());
+        }
 
         String yaml = String.format(Locale.US,
             "  - type: %s\n" +
