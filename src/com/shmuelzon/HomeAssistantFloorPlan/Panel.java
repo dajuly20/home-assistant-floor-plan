@@ -826,10 +826,12 @@ public class Panel extends JPanel implements DialogView {
         haAccordionCheckbox = new JCheckBox("Accordion Mode", true);
         sh3dCollapseButton = new JButton("-");
         sh3dCollapseButton.setToolTipText("Collapse all");
-        sh3dCollapseButton.setMargin(new java.awt.Insets(1, 6, 1, 6));
+        sh3dCollapseButton.setFont(sh3dCollapseButton.getFont().deriveFont(java.awt.Font.BOLD, 10f));
+        sh3dCollapseButton.setMargin(new java.awt.Insets(0, 4, 0, 4));
         haCollapseButton = new JButton("-");
         haCollapseButton.setToolTipText("Collapse all");
-        haCollapseButton.setMargin(new java.awt.Insets(1, 6, 1, 6));
+        haCollapseButton.setFont(haCollapseButton.getFont().deriveFont(java.awt.Font.BOLD, 10f));
+        haCollapseButton.setMargin(new java.awt.Insets(0, 4, 0, 4));
 
         detectedLightsTree.addTreeExpansionListener(new TreeExpansionListener() {
             public void treeExpanded(TreeExpansionEvent e) {
@@ -891,12 +893,18 @@ public class Panel extends JPanel implements DialogView {
         Insets insets = new Insets(0, standardGap, 0, standardGap);
         int currentGridYIndex = 0;
 
-        /* Detected entities captions */
-        add(detectedLightsLabel, new GridBagConstraints(
-            0, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
+        /* Detected entities captions with collapse buttons */
+        JPanel sh3dLabelRow = new JPanel(new BorderLayout(4, 0));
+        sh3dLabelRow.add(detectedLightsLabel, BorderLayout.CENTER);
+        sh3dLabelRow.add(sh3dCollapseButton, BorderLayout.EAST);
+        add(sh3dLabelRow, new GridBagConstraints(
+            0, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        add(otherEntitiesLabel, new GridBagConstraints(
-            2, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.CENTER,
+        JPanel haLabelRow = new JPanel(new BorderLayout(4, 0));
+        haLabelRow.add(otherEntitiesLabel, BorderLayout.CENTER);
+        haLabelRow.add(haCollapseButton, BorderLayout.EAST);
+        add(haLabelRow, new GridBagConstraints(
+            2, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.CENTER,
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
@@ -922,19 +930,13 @@ public class Panel extends JPanel implements DialogView {
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
-        /* Accordion mode checkboxes + collapse buttons */
-        JPanel sh3dAccordionRow = new JPanel(new BorderLayout(4, 0));
-        sh3dAccordionRow.add(sh3dAccordionCheckbox, BorderLayout.WEST);
-        sh3dAccordionRow.add(sh3dCollapseButton, BorderLayout.EAST);
-        add(sh3dAccordionRow, new GridBagConstraints(
-            0, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.WEST,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
-        JPanel haAccordionRow = new JPanel(new BorderLayout(4, 0));
-        haAccordionRow.add(haAccordionCheckbox, BorderLayout.WEST);
-        haAccordionRow.add(haCollapseButton, BorderLayout.EAST);
-        add(haAccordionRow, new GridBagConstraints(
-            2, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.WEST,
-            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        /* Accordion mode checkboxes */
+        add(sh3dAccordionCheckbox, new GridBagConstraints(
+            0, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.WEST,
+            GridBagConstraints.NONE, insets, 0, 0));
+        add(haAccordionCheckbox, new GridBagConstraints(
+            2, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.WEST,
+            GridBagConstraints.NONE, insets, 0, 0));
         currentGridYIndex++;
 
         /* Camera selector */
