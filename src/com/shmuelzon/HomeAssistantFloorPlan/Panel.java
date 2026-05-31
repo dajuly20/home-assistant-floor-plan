@@ -471,7 +471,21 @@ public class Panel extends JPanel implements DialogView {
 
         cameraLabel = new JLabel("Camera:");
         cameraComboBox = new JComboBox<>(controller.getAvailableCameras().toArray(new Camera[0]));
-        cameraComboBox.setSelectedItem(controller.getSelectedCamera());
+        // Match camera by name since setSelectedItem uses object identity
+        Camera savedCamera = controller.getSelectedCamera();
+        String savedCameraName = savedCamera != null ? savedCamera.getName() : null;
+        for (int i = 0; i < cameraComboBox.getItemCount(); i++) {
+            Camera cam = cameraComboBox.getItemAt(i);
+            String camName = cam.getName();
+            // Match by name, or match unnamed cameras by position
+            if ((savedCameraName != null && savedCameraName.equals(camName)) ||
+                (savedCameraName == null && camName == null &&
+                 Math.abs(cam.getX() - savedCamera.getX()) < 0.01f &&
+                 Math.abs(cam.getY() - savedCamera.getY()) < 0.01f)) {
+                cameraComboBox.setSelectedIndex(i);
+                break;
+            }
+        }
         cameraComboBox.setRenderer(new DefaultListCellRenderer() {
             public Component getListCellRendererComponent(JList<?> jList, Object o, int i, boolean b, boolean b1) {
                 super.getListCellRendererComponent(jList, o, i, b, b1);
