@@ -144,6 +144,8 @@ public class Panel extends JPanel implements DialogView {
     private JButton checkEntitiesButton;
     private JCheckBox sh3dAccordionCheckbox;
     private JCheckBox haAccordionCheckbox;
+    private JButton sh3dCollapseButton;
+    private JButton haCollapseButton;
 
     private class EntityNode {
         public Entity entity;
@@ -822,6 +824,12 @@ public class Panel extends JPanel implements DialogView {
 
         sh3dAccordionCheckbox = new JCheckBox("Accordion Mode", true);
         haAccordionCheckbox = new JCheckBox("Accordion Mode", true);
+        sh3dCollapseButton = new JButton("-");
+        sh3dCollapseButton.setToolTipText("Collapse all");
+        sh3dCollapseButton.setMargin(new java.awt.Insets(1, 6, 1, 6));
+        haCollapseButton = new JButton("-");
+        haCollapseButton.setToolTipText("Collapse all");
+        haCollapseButton.setMargin(new java.awt.Insets(1, 6, 1, 6));
 
         detectedLightsTree.addTreeExpansionListener(new TreeExpansionListener() {
             public void treeExpanded(TreeExpansionEvent e) {
@@ -844,6 +852,9 @@ public class Panel extends JPanel implements DialogView {
         haAccordionCheckbox.addActionListener(e -> {
             if (haAccordionCheckbox.isSelected()) expandFirstDomain(otherEntitiesTree);
         });
+
+        sh3dCollapseButton.addActionListener(e -> collapseAllDomains(detectedLightsTree));
+        haCollapseButton.addActionListener(e -> collapseAllDomains(otherEntitiesTree));
     }
 
     private void setComponentsEnabled(boolean enabled) {
@@ -863,6 +874,8 @@ public class Panel extends JPanel implements DialogView {
         outputDirectoryBrowseButton.setEnabled(enabled);
         useExistingRendersCheckbox.setEnabled(enabled);
         cameraComboBox.setEnabled(enabled);
+        sh3dCollapseButton.setEnabled(enabled);
+        haCollapseButton.setEnabled(enabled);
         if (enabled) {
             startButton.setAction(getActionMap().get(ActionType.START));
             startButton.setText(resource.getString("HomeAssistantFloorPlan.Panel.startButton.text"));
@@ -909,13 +922,19 @@ public class Panel extends JPanel implements DialogView {
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
-        /* Accordion mode checkboxes */
-        add(sh3dAccordionCheckbox, new GridBagConstraints(
-            0, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.WEST,
-            GridBagConstraints.NONE, insets, 0, 0));
-        add(haAccordionCheckbox, new GridBagConstraints(
-            2, currentGridYIndex, 2, 1, 0, 0, GridBagConstraints.WEST,
-            GridBagConstraints.NONE, insets, 0, 0));
+        /* Accordion mode checkboxes + collapse buttons */
+        JPanel sh3dAccordionRow = new JPanel(new BorderLayout(4, 0));
+        sh3dAccordionRow.add(sh3dAccordionCheckbox, BorderLayout.WEST);
+        sh3dAccordionRow.add(sh3dCollapseButton, BorderLayout.EAST);
+        add(sh3dAccordionRow, new GridBagConstraints(
+            0, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.WEST,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        JPanel haAccordionRow = new JPanel(new BorderLayout(4, 0));
+        haAccordionRow.add(haAccordionCheckbox, BorderLayout.WEST);
+        haAccordionRow.add(haCollapseButton, BorderLayout.EAST);
+        add(haAccordionRow, new GridBagConstraints(
+            2, currentGridYIndex, 2, 1, 1, 0, GridBagConstraints.WEST,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
         /* Camera selector */
@@ -1506,13 +1525,19 @@ public class Panel extends JPanel implements DialogView {
 
     private void collapseOtherDomains(JTree tree, TreePath expandedPath) {
         if (expandedPath.getPathCount() != 2) return; // only act on domain-level nodes
+        Object expandedNode = expandedPath.getLastPathComponent();
         DefaultMutableTreeNode root = (DefaultMutableTreeNode) tree.getModel().getRoot();
         for (int i = 0; i < root.getChildCount(); i++) {
             DefaultMutableTreeNode child = (DefaultMutableTreeNode) root.getChildAt(i);
-            TreePath childPath = new TreePath(child.getPath());
-            if (!childPath.equals(expandedPath))
-                tree.collapsePath(childPath);
+            if (child != expandedNode)
+                tree.collapsePath(new TreePath(child.getPath()));
         }
+    }
+
+    private void collapseAllDomains(JTree tree) {
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) tree.getModel().getRoot();
+        for (int i = 0; i < root.getChildCount(); i++)
+            tree.collapsePath(new TreePath(((DefaultMutableTreeNode) root.getChildAt(i)).getPath()));
     }
 
     private void expandFirstDomain(JTree tree) {
