@@ -234,7 +234,10 @@ public class Panel extends JPanel implements DialogView {
                                         JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
                                     if (choice == JOptionPane.YES_OPTION) {
                                         try {
-                                            java.awt.Desktop.getDesktop().open(new java.io.File(controller.getEffectiveOutputDirectory()));
+                                            java.io.File openDir = new java.io.File(controller.getEffectiveOutputDirectory()).getParentFile();
+                                            if (openDir != null) openDir = openDir.getParentFile();
+                                            if (openDir == null) openDir = new java.io.File(controller.getEffectiveOutputDirectory());
+                                            java.awt.Desktop.getDesktop().open(openDir);
                                         } catch (Exception ex) {
                                             JOptionPane.showMessageDialog(Panel.this,
                                                 "Could not open folder: " + ex.getMessage(),

@@ -16,10 +16,11 @@ No manual image editing. No layout fiddling. Place your furniture, name it after
 * **Smart Light Handling** — Groups lights by room, supports RGB/dimmable lights with live color and brightness, detects spot light groups, renders all light combinations
 * **Door & Window States** — Renders doors and windows open or closed based on your Home Assistant `cover` or `binary_sensor` state
 * **Binary Sensor Support** — Motion detectors, presence sensors, contact sensors and more appear as state icons that show/hide based on their on/off state
+* **Person Entity Support** — `person.xxx` entities are displayed on the floor plan; initials are shown as a compact prefix instead of the full name
 * **Night-Time Rendering** — Optionally generate a second render for night, automatically switching based on the HA `sun` integration
 * **Image Caching** — Skips re-rendering unchanged images so iterating on your floor plan is fast
-* **Live Render Preview** — A floating window shows the image being rendered in real time, with a progress counter
-* **Camera Selection** — Pick any saved camera/viewpoint from your SH3D project as the render perspective
+* **Live Render Preview** — A floating window shows the image being rendered in real time, with a progress counter and elapsed time
+* **Camera Selection** — Pick any saved camera/viewpoint from your SH3D project as the render perspective; sync it instantly with the current 3D view using the **Sync** button
 * **HA Entity Browser** — Fetch all entity IDs directly from HA to browse and verify names without leaving the plugin
 * **Entity Matching** — The plugin highlights which SH3D furniture names match HA entity IDs (green) and which don't (orange), with fuzzy "Did you mean?" rename suggestions
 
@@ -49,7 +50,7 @@ Renders a separate image for every possible light combination across the entire 
 6. Select the **camera** (perspective) to render from in the Camera dropdown
 7. Adjust the [configuration options](#configuration-options)
 8. Click **Start** — a live render preview window opens showing progress
-9. After rendering, click **Yes** when prompted to open the output folder
+9. After rendering, click **Yes** when prompted to open the output folder (opens two levels above the camera subfolder, so you land at the `floorplan/` root)
 10. Copy the `floorplan/` folder and `floorplan.yaml` to your Home Assistant `/config/www/` path
 11. In Home Assistant, create a `picture-elements` card and paste the contents of `floorplan.yaml`
 
@@ -64,9 +65,11 @@ The configuration window shows two side-by-side trees:
 
 Right-click any entity in the left tree to **Rename** it (opens the SH3D furniture properties dialog) or to see **"Did you mean?"** suggestions based on the closest HA entity IDs. Double-click to open the entity's option panel.
 
+Each tree has a **Collapse All** button above it to quickly collapse all domain groups. Clicking a domain header toggles it open/closed (accordion mode).
+
 | Option | Description |
 | ------ | ----------- |
-| Camera | Which saved viewpoint/camera to render from |
+| Camera | Which saved viewpoint/camera to render from. Use the **Sync** button next to the dropdown to snap the plugin camera to the current SH3D 3D view position |
 | Width / Height | Output resolution of the rendered images |
 | Light mixing mode | [Rendering mode](#rendering-modes) to use |
 | Render time | Date/time for the render — affects sun position, intensity and color |
@@ -78,7 +81,7 @@ Right-click any entity in the left tree to **Rename** it (opens the SH3D furnitu
 | Output directory | Local path on your PC where images and YAML are saved |
 | HA base path | HA path where floor plan images are served (default: `/local/floorplan`) |
 
-When rendering starts, a **live preview window** opens showing the current image being rendered and a `done / total` progress counter. Click **Stop** in that window to cancel at any time. When finished, the plugin asks whether to open the output folder directly.
+When rendering starts, a **live preview window** opens showing the current image being rendered, a `done / total` progress counter, and a running **elapsed time** timer. Click **Stop** in that window to cancel at any time. When finished, the plugin shows the total render duration and asks whether to open the output folder directly.
 
 ### Entity Options
 
@@ -135,6 +138,7 @@ When rendering starts, a **live preview window** opens showing the current image
   * `light.xxx`
   * `lock.xxx`
   * `media_player.xxx`
+  * `person.xxx`
   * `remote.xxx`
   * `sensor.xxx`
   * `siren.xxx`
@@ -314,6 +318,30 @@ With a specific attribute (e.g. `battery_level`):
 * Reduce scale (e.g. 70%) to make the text smaller and less intrusive
 * Use Display Condition **Available** to hide the label when the sensor is offline
 
+## Person Entities
+
+`person.xxx` entities are supported as floor plan overlays — useful for showing who is home and roughly where they are.
+
+### Setup
+
+1. Place any furniture piece in SH3D and set its **name** to the HA entity ID, e.g. `person.julian`
+2. Optionally set the **description** as a tooltip
+3. The plugin auto-detects it and generates a `state-icon` element
+
+### Display
+
+The entity prefix shown in the plugin UI uses **initials** instead of the full name (e.g. `JW` for `person.julian_wiche`) to keep the tree compact when you have multiple people.
+
+### Default Behavior
+
+| Property | Person default |
+| -------- | -------------- |
+| Display type | Icon (`state-icon`) |
+| Tap action | More Info |
+| Position | Auto-calculated from 3D position |
+
+> Person entities are pure UI overlays and do not affect the 3D renders themselves.
+
 ## Suggestions
 
 For best results:
@@ -403,8 +431,11 @@ Click **"Check entities"** to re-run the green/orange matching against the curre
 * [x] Allow overriding state-icons/labels positions, and save persistently
 * [x] Allow defining, per entity, if it should be an icon or label, and save persistently
 * [x] Fetch HA entity list directly from the plugin (HA API integration)
-* [x] Camera/perspective selector — pick any saved viewpoint
+* [x] Camera/perspective selector — pick any saved viewpoint, sync with current 3D view via Sync button
 * [x] Entity name matching with green/orange highlighting and rename suggestions
+* [x] Person entity support with initials display
+* [x] Render duration timer in progress window and finish dialog
+* [x] Collapse All button and accordion mode for entity trees
 * [ ] Support fans with animated gif/png with css3 image rotation
 * [ ] Auto-upload generated files to Home Assistant after rendering
 * [ ] CLI / headless rendering mode for server-side use
