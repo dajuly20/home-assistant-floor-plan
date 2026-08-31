@@ -41,6 +41,7 @@ public class Entity implements Comparable<Entity> {
     private static final String SETTING_NAME_DISPLAY_TYPE = "displayType";
     private static final String SETTING_NAME_ICON_OVERRIDE = "iconOverride";
     private static final String SETTING_NAME_ATTRIBUTE = "attribute";
+    private static final String SETTING_NAME_ADDITIONAL_ENTITIES = "additionalEntities";
     private static final String SETTING_NAME_DISPLAY_CONDITION = "displayCondition";
     private static final String SETTING_NAME_TAP_ACTION = "tapAction";
     private static final String SETTING_NAME_TAP_ACTION_VALUE = "tapActionValue";
@@ -59,6 +60,7 @@ public class Entity implements Comparable<Entity> {
     private static final String SETTING_NAME_DISPLAY_FURNITURE_CONDITION_VALUE = "displayFurnitureConditionValue";
     private static final String SETTING_NAME_OPEN_FURNITURE_CONDITION = "openFurnitureCondition";
     private static final String SETTING_NAME_OPEN_FURNITURE_CONDITION_VALUE = "openFurnitureConditionValue";
+    private static final double ADDITIONAL_ENTITY_LINE_SPACING_PERCENT = 3.0;
 
     private List<? extends HomePieceOfFurniture> piecesOfFurniture;
     private String id;
@@ -70,6 +72,7 @@ public class Entity implements Comparable<Entity> {
     private DisplayType displayType;
     private String iconOverride;
     private String attribute;
+    private String additionalEntities;
     private DisplayCondition displayCondition;
     private Action tapAction;
     private String tapActionValue;
@@ -174,6 +177,19 @@ public class Entity implements Comparable<Entity> {
 
     public boolean isAttributeModified() {
         return settings.get(name + "." + SETTING_NAME_ATTRIBUTE) != null;
+    }
+
+    public String getAdditionalEntities() {
+        return additionalEntities;
+    }
+
+    public void setAdditionalEntities(String additionalEntities) {
+        this.additionalEntities = additionalEntities;
+        settings.set(name + "." + SETTING_NAME_ADDITIONAL_ENTITIES, additionalEntities.isEmpty() ? null : additionalEntities);
+    }
+
+    public boolean isAdditionalEntitiesModified() {
+        return settings.get(name + "." + SETTING_NAME_ADDITIONAL_ENTITIES) != null;
     }
 
     public DisplayCondition getDisplayCondition() {
@@ -427,6 +443,7 @@ public class Entity implements Comparable<Entity> {
         settings.set(name + "." + SETTING_NAME_DISPLAY_TYPE, null);
         settings.set(name + "." + SETTING_NAME_ICON_OVERRIDE, null);
         settings.set(name + "." + SETTING_NAME_ATTRIBUTE, null);
+        settings.set(name + "." + SETTING_NAME_ADDITIONAL_ENTITIES, null);
         settings.set(name + "." + SETTING_NAME_DISPLAY_CONDITION, null);
         settings.set(name + "." + SETTING_NAME_TAP_ACTION, null);
         settings.set(name + "." + SETTING_NAME_TAP_ACTION_VALUE, null);
@@ -538,27 +555,9 @@ public class Entity implements Comparable<Entity> {
             additionalYaml += String.format("    prefix: \"👤 %s: \"\n", initials.toString());
         }
 
-        String yaml = String.format(Locale.US,
-            "  - type: %s\n" +
-            "    entity: %s\n" +
-            "    title: %s\n" +
-            "%s" +
-            "    style:\n" +
-            "      top: %.2f%%\n" +
-            "      left: %.2f%%\n" +
-            "      border-radius: 50%%\n" +
-            "      text-align: center\n" +
-            "      background-color: %s\n" +
-            "      opacity: %d%%\n" +
-            "      transform: translate(-50%%, -50%%) scale(%d%%)\n" +
-            "    tap_action:\n" +
-            "      action: %s\n" +
-            "    double_tap_action:\n" +
-            "      action: %s\n" +
-            "    hold_action:\n" +
-            "      action: %s\n",
-            displayTypeToYamlString.get(displayType), name, title, additionalYaml, position.y, position.x, backgroundColor, opacity, scale,
-            actionYaml(tapAction, tapActionValue), actionYaml(doubleTapAction, doubleTapActionValue), actionYaml(holdAction, holdActionValue));
+        String elementType = displayTypeToYamlString.get(displayType);
+        String yaml = buildElementYaml(elementType, name, title, additionalYaml, position.y, position.x);
+        yaml += buildAdditionalEntitiesYaml(elementType);
 
         if (displayCondition == DisplayCondition.ALWAYS)
             return yaml;
@@ -577,6 +576,60 @@ public class Entity implements Comparable<Entity> {
             "%s",
             name, state_condition, yaml.replaceAll(".*\\R", "    $0")
         );
+    }
+
+    private String buildElementYaml(String elementType, String entityId, String elementTitle, String extraYaml, double top, double left) {
+        return String.format(Locale.US,
+            "  - type: %s\n" +
+            "    entity: %s\n" +
+            "    title: %s\n" +
+            "%s" +
+            "    style:\n" +
+            "      top: %.2f%%\n" +
+            "      left: %.2f%%\n" +
+            "      border-radius: 50%%\n" +
+            "      text-align: center\n" +
+            "      background-color: %s\n" +
+            "      opacity: %d%%\n" +
+            "      transform: translate(-50%%, -50%%) scale(%d%%)\n" +
+            "    tap_action:\n" +
+            "      action: %s\n" +
+            "    double_tap_action:\n" +
+            "      action: %s\n" +
+            "    hold_action:\n" +
+            "      action: %s\n",
+            elementType, entityId, elementTitle, extraYaml, top, left, backgroundColor, opacity, scale,
+            actionYaml(tapAction, tapActionValue), actionYaml(doubleTapAction, doubleTapActionValue), actionYaml(holdAction, holdActionValue));
+    }
+
+    /* Renders any extra entities configured for this marker as additional labels stacked below it.
+     * Each token is an entity id, optionally suffixed with "|attribute" to show one of its attributes. */
+    private String buildAdditionalEntitiesYaml(String elementType) {
+        if (additionalEntities == null || additionalEntities.trim().isEmpty())
+            return "";
+
+        StringBuilder result = new StringBuilder();
+        double topOffset = ADDITIONAL_ENTITY_LINE_SPACING_PERCENT;
+        for (String token : additionalEntities.split(",")) {
+            token = token.trim();
+            if (token.isEmpty())
+                continue;
+
+            String extraEntityId = token;
+            String extraAttribute = "";
+            int separatorIndex = token.indexOf('|');
+            if (separatorIndex >= 0) {
+                extraEntityId = token.substring(0, separatorIndex).trim();
+                extraAttribute = token.substring(separatorIndex + 1).trim();
+            }
+            if (extraEntityId.isEmpty())
+                continue;
+
+            String extraYaml = extraAttribute.isEmpty() ? "" : String.format("    attribute: %s\n", extraAttribute);
+            result.append(buildElementYaml(elementType, extraEntityId, extraEntityId, extraYaml, position.y + topOffset, position.x));
+            topOffset += ADDITIONAL_ENTITY_LINE_SPACING_PERCENT;
+        }
+        return result.toString();
     }
 
     private void saveInitialLightPowerValues() {
@@ -629,6 +682,7 @@ public class Entity implements Comparable<Entity> {
         displayType = getSavedEnumValue(DisplayType.class, name + "." + SETTING_NAME_DISPLAY_TYPE, defaultDisplayType());
         iconOverride = settings.get(name + "." + SETTING_NAME_ICON_OVERRIDE, "");
         attribute = settings.get(name + "." + SETTING_NAME_ATTRIBUTE, "");
+        additionalEntities = settings.get(name + "." + SETTING_NAME_ADDITIONAL_ENTITIES, "");
         displayCondition = getSavedEnumValue(DisplayCondition.class, name + "." + SETTING_NAME_DISPLAY_CONDITION, DisplayCondition.ALWAYS);
         tapAction = getSavedEnumValue(Action.class, name + "." + SETTING_NAME_TAP_ACTION, defaultAction());
         tapActionValue = settings.get(name + "." + SETTING_NAME_TAP_ACTION_VALUE, "");

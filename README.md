@@ -96,6 +96,7 @@ When rendering starts, a **live preview window** opens showing the current image
 | Display type | All | How the entity appears: `state-icon`, `state-label`, or `state-badge`. See [Elements](https://www.home-assistant.io/dashboards/picture-elements/#elements) |
 | Icon override | All (icon mode) | Override the default entity icon, e.g. `mdi:motion-sensor` |
 | Attribute | Sensors (label mode) | Show a specific entity attribute instead of the state value, e.g. `battery_level`, `unit_of_measurement` |
+| Additional entities | Label mode | Comma-separated extra entity IDs rendered as labels stacked below this one, e.g. `sensor.room_humidity`. Append `\|attribute` to show an attribute |
 | Display condition | All | When to show the entity: Always, Never, Available, When On, When Off |
 | Tap action | All | What happens on click. See [Tap action](https://www.home-assistant.io/dashboards/actions/#tap-action) |
 | Double tap action | All | See [Double tap action](https://www.home-assistant.io/dashboards/actions/#double-tap-action) |
@@ -276,6 +277,16 @@ By default, the label shows the entity's **state** value. Use the **Attribute** 
 | `last_changed` | Last time the value changed |
 
 The Attribute field is only visible in the entity options panel when Display Type is set to **Label**.
+
+### The Additional Entities Field
+
+To show more than one value at the same spot — e.g. temperature **and** humidity — use the **Additional entities** field (only visible when Display Type is **Label**). Enter a comma-separated list of entity IDs; each one is rendered as its own `state-label`, stacked underneath the primary label (offset 3% downward per line). They inherit the primary marker's position, style, actions and display condition.
+
+| Example | Result |
+| ------- | ------ |
+| `sensor.humidity_living_room` | Primary temperature label, humidity label below it |
+| `sensor.humidity_living_room, sensor.co2_living_room` | Two extra labels stacked below |
+| `climate.living_room\|current_temperature` | Append `\|attribute` to show an attribute of the extra entity instead of its state |
 
 ### YAML Example
 

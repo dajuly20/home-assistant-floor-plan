@@ -47,6 +47,8 @@ public class EntityOptionsPanel extends JPanel {
     private JTextField iconOverrideTextField;
     private JLabel attributeLabel;
     private JTextField attributeTextField;
+    private JLabel additionalEntitiesLabel;
+    private JTextField additionalEntitiesTextField;
     private JLabel displayConditionLabel;
     private JComboBox<Entity.DisplayCondition> displayConditionComboBox;
     private JLabel tapActionLabel;
@@ -155,6 +157,19 @@ public class EntityOptionsPanel extends JPanel {
             public void executeUpdate(DocumentEvent e) {
                 String attribute = attributeTextField.getText();
                 entity.setAttribute(attribute);
+                markModified();
+            }
+        });
+
+        additionalEntitiesLabel = new JLabel();
+        additionalEntitiesLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.additionalEntitiesLabel.text"));
+        additionalEntitiesTextField = new JTextField(20);
+        additionalEntitiesTextField.setText(entity.getAdditionalEntities());
+        additionalEntitiesTextField.setToolTipText(resource.getString("HomeAssistantFloorPlan.Panel.additionalEntitiesLabel.tooltip"));
+        additionalEntitiesTextField.getDocument().addDocumentListener(new SimpleDocumentListener() {
+            @Override
+            public void executeUpdate(DocumentEvent e) {
+                entity.setAdditionalEntities(additionalEntitiesTextField.getText());
                 markModified();
             }
         });
@@ -495,6 +510,16 @@ public class EntityOptionsPanel extends JPanel {
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
+        /* Additional entities */
+        add(additionalEntitiesLabel, new GridBagConstraints(
+            0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        additionalEntitiesLabel.setHorizontalAlignment(labelAlignment);
+        add(additionalEntitiesTextField, new GridBagConstraints(
+            1, currentGridYIndex, 4, 1, 0, 0, GridBagConstraints.LINE_START,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        currentGridYIndex++;
+
         /* Display Condition */
         add(displayConditionLabel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
@@ -657,6 +682,7 @@ public class EntityOptionsPanel extends JPanel {
         displayTypeLabel.setForeground(entity.isDisplayTypeModified() ? modifiedColor : Color.BLACK);
         iconOverrideLabel.setForeground(entity.isIconOverrideModified() ? modifiedColor : Color.BLACK);
         attributeLabel.setForeground(entity.isAttributeModified() ? modifiedColor : Color.BLACK);
+        additionalEntitiesLabel.setForeground(entity.isAdditionalEntitiesModified() ? modifiedColor : Color.BLACK);
         displayConditionLabel.setForeground(entity.isDisplayConditionModified() ? modifiedColor : Color.BLACK);
         tapActionLabel.setForeground(entity.isTapActionModified() ? modifiedColor : Color.BLACK);
         doubleTapActionLabel.setForeground(entity.isDoubleTapActionModified() ? modifiedColor : Color.BLACK);
@@ -676,6 +702,8 @@ public class EntityOptionsPanel extends JPanel {
         iconOverrideTextField.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.ICON);
         attributeLabel.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
         attributeTextField.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
+        additionalEntitiesLabel.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
+        additionalEntitiesTextField.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
         tapActionValueTextField.setVisible((Entity.Action)tapActionComboBox.getSelectedItem() == Entity.Action.NAVIGATE);
         doubleTapActionValueTextField.setVisible((Entity.Action)doubleTapActionComboBox.getSelectedItem() == Entity.Action.NAVIGATE);
         holdActionValueTextField.setVisible((Entity.Action)holdActionComboBox.getSelectedItem() == Entity.Action.NAVIGATE);
