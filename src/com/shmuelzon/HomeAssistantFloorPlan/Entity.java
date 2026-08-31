@@ -565,7 +565,7 @@ public class Entity implements Comparable<Entity> {
 
         String state_condition = "state_not: unavailable";
         if (displayCondition != DisplayCondition.AVAILABLE)
-            state_condition = "state: " + (displayCondition == DisplayCondition.WHEN_ON ? "on" : "off");
+            state_condition = "state: \"" + (displayCondition == DisplayCondition.WHEN_ON ? "on" : "off") + "\"";
 
         return String.format(
             "  - type: conditional\n" +
