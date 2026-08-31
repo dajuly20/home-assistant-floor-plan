@@ -97,6 +97,7 @@ When rendering starts, a **live preview window** opens showing the current image
 | Icon override | All (icon mode) | Override the default entity icon, e.g. `mdi:motion-sensor` |
 | Attribute | Sensors (label mode) | Show a specific entity attribute instead of the state value, e.g. `battery_level`, `unit_of_measurement` |
 | Additional entities | Label mode | Comma-separated extra entity IDs rendered as labels stacked below this one, e.g. `sensor.room_humidity`. Append `\|attribute` to show an attribute |
+| Entities | `device.*` markers | Comma-separated entity IDs of the device to show in one oval (first = top line). **Load from HA** fetches the device's entities via `/api/template`; delete the ones you don't want |
 | Display condition | All | When to show the entity: Always, Never, Available, When On, When Off |
 | Tap action | All | What happens on click. See [Tap action](https://www.home-assistant.io/dashboards/actions/#tap-action) |
 | Double tap action | All | See [Double tap action](https://www.home-assistant.io/dashboards/actions/#double-tap-action) |
@@ -291,6 +292,17 @@ To show more than one value at the same spot — e.g. temperature **and** humidi
 | `climate.living_room\|current_temperature` | Append `\|attribute` to show an attribute of the extra entity instead of its state |
 
 Because line spacing is a fixed percentage and the pill height is estimated from the line count, you may need to fine-tune `scale` / `position` after generating.
+
+### Device markers (`device.*`)
+
+Instead of naming a furniture piece after a single entity, you can name it after a **Home Assistant device** and pick its entities in the plugin — no entity IDs to type.
+
+1. Name the furniture piece `device.<device name>` (the name shown on the device page in HA, e.g. `device.GrossesBad_TempHumid`) or `device.<device id>` (the hex id from the device page URL).
+2. Open the entity options, keep Display Type = **Label**, and click **Load from HA** next to the **Entities** field. The plugin resolves the device via `/api/template` (`device_id()` accepts the name or id) and fills in all of the device's entity IDs.
+3. Delete the ones you don't want and reorder the rest (first = top line).
+4. Generate — the selected entities are rendered as one oval, same as the Additional entities field.
+
+Requires a working [Home Assistant connection](#home-assistant-connection) (URL + token). If `/api/template` is unavailable you can still type the entity IDs into the field manually.
 
 ### YAML Example
 

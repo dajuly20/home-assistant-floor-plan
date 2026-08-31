@@ -8,6 +8,7 @@ import java.beans.PropertyChangeSupport;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.InterruptedIOException;
 import java.lang.InterruptedException;
@@ -433,6 +434,51 @@ public class Controller {
 
     public List<String> getCachedHaEntityIds() {
         return cachedHaEntityIds;
+    }
+
+    /* Renders a Jinja template through Home Assistant's REST API and returns the trimmed result. */
+    public String evaluateTemplate(String template) throws IOException {
+        String apiUrl = haUrl.replaceAll("/+$", "") + "/api/template";
+        HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("Authorization", "Bearer " + haApiToken);
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(10000);
+        connection.setDoOutput(true);
+
+        String body = "{\"template\": \"" + template.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"}";
+        try (OutputStream os = connection.getOutputStream()) {
+            os.write(body.getBytes("UTF-8"));
+        }
+
+        int responseCode = connection.getResponseCode();
+        InputStream stream = responseCode == 200 ? connection.getInputStream() : connection.getErrorStream();
+        StringBuilder response = new StringBuilder();
+        if (stream != null) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"))) {
+                String line;
+                while ((line = reader.readLine()) != null)
+                    response.append(line).append("\n");
+            }
+        }
+        if (responseCode != 200)
+            throw new IOException("Home Assistant /api/template returned HTTP " + responseCode + ": " + response.toString().trim());
+        return response.toString().trim();
+    }
+
+    /* Resolves a device - given by its device id or its (user) name - to the entity ids that belong to it. */
+    public List<String> resolveDeviceEntityIds(String deviceNameOrId) throws IOException {
+        String safe = deviceNameOrId.replace("'", "").trim();
+        String template =
+            "{% set d = device_id('" + safe + "') or '" + safe + "' %}" +
+            "{{ device_entities(d) | list | join(',') }}";
+        List<String> ids = new ArrayList<>();
+        for (String part : evaluateTemplate(template).split(","))
+            if (!part.trim().isEmpty())
+                ids.add(part.trim());
+        Collections.sort(ids);
+        return ids;
     }
 
     public List<String> getHaSelectedEntityIds() {
@@ -870,7 +916,8 @@ public class Controller {
             "vacuum.",
             "valve.",
             "water_heater.",
-            "weather."
+            "weather.",
+            "device."
         );
 
         if (name == null)

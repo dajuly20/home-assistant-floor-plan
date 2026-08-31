@@ -91,7 +91,19 @@ Liste weiterer Entity-IDs. Syntax je Token:
 fix in %, breitester Wert kann aus der Pille ragen → ggf. `scale`/`position` nachjustieren.
 Rollback-Tag: `before-one-oval`.
 
-### Option D — Gerät angeben statt einzelner Entities  ·  Status: geplant, nicht umgesetzt
+### Option D — Gerät angeben statt einzelner Entities  ·  Status: ✅ Grundfunktion umgesetzt
+
+**Umgesetzt:** Möbelname `device.<name>` oder `device.<id>` wird erkannt
+(`isHomeAssistantEntity` + `device.`). In den Entity-Optionen: Feld **„Entities"**
++ Button **„Load from HA"** → `Controller.resolveDeviceEntityIds()` ruft
+`/api/template` mit `{% set d = device_id('<x>') or '<x>' %}{{ device_entities(d) | list | join(',') }}`.
+Auswahl (CSV, editierbar) wird als ein Oval gerendert (`buildOvalYaml`).
+`device_id()` akzeptiert Gerätename *oder* -ID.
+
+**Noch offen:** echte Checkbox-Liste statt Textfeld; Sortierung/Heuristik nach
+`device_class`; Option E (generierter Template-Helfer) als Alternativ-Rendering.
+
+Ursprüngliche Skizze:
 
 Idee: Möbelstück auf ein **HA-Gerät** zeigen lassen, Plugin holt dessen Entities
 selbst und zeigt die passende(n) an.

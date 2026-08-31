@@ -153,6 +153,52 @@ eine Zeile, `23,3 °C / 57 %`, inkl. `tap_action` (More-Info öffnet den Helfer)
 
 ---
 
+## Weg C – Gerät angeben, Entitäten im Plugin auswählen (kein Abtippen)
+
+Wie Weg A (ein Oval, zwei Zeilen), aber du gibst **keine Entity-IDs** an, sondern
+den **Gerätenamen** – das Plugin ermittelt den Rest.
+
+Voraussetzung: funktionierende [HA-Verbindung](README.md#home-assistant-connection)
+(URL + Token) im Plugin.
+
+### 1. Möbelstück benennen
+
+Name = `device.` + Gerätename (wie auf der Geräteseite in HA):
+
+```
+device.GrossesBad_TempHumid
+```
+
+Alternativ die Geräte-ID (Hex aus der URL): `device.7d7d9509e8a710386eccecfc8d827923`
+
+### 2. Entitäten laden
+
+Entity-Optionen öffnen → Display type = `Label` → neben dem Feld **„Entities"** auf
+**„Load from HA"** klicken. Das Plugin löst das Gerät über `/api/template`
+(`device_id()` akzeptiert Name *oder* ID) auf und trägt alle Entity-IDs des Geräts ein:
+
+```
+sensor.grossesbad_temphumid_temperature, sensor.grossesbad_temphumid_humidity, sensor.grossesbad_temphumid_battery, ...
+```
+
+### 3. Auswählen
+
+Nicht gewünschte Einträge löschen, Reihenfolge anpassen (erste = oberste Zeile):
+
+```
+sensor.grossesbad_temphumid_temperature, sensor.grossesbad_temphumid_humidity
+```
+
+### 4. Generieren
+
+Ergebnis wie Weg A: ein Oval, Temperatur oben, Feuchte darunter. Nachjustieren
+(Scale/Position) wie dort.
+
+> Fällt `/api/template` aus (deaktiviert / keine Verbindung), kannst du die IDs
+> auch von Hand ins Feld schreiben.
+
+---
+
 ## Welchen Weg nehmen?
 
 - **Schnell testen, keine HA-Änderung** → Weg A.

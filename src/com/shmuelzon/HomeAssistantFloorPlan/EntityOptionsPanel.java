@@ -9,6 +9,7 @@ import java.awt.Insets;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.List;
 import java.util.Locale;
 import java.util.ResourceBundle;
 
@@ -26,6 +27,7 @@ import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
@@ -41,6 +43,10 @@ public class EntityOptionsPanel extends JPanel {
     private enum ActionType {CLOSE, RESET_TO_DEFAULTS}
 
     private Entity entity;
+    private Controller controller;
+    private JLabel selectedEntitiesLabel;
+    private JTextField selectedEntitiesTextField;
+    private JButton loadDeviceEntitiesButton;
     private JLabel displayTypeLabel;
     private JComboBox<Entity.DisplayType> displayTypeComboBox;
     private JLabel iconOverrideLabel;
@@ -85,9 +91,10 @@ public class EntityOptionsPanel extends JPanel {
     private JButton resetToDefaultsButton;
     private ResourceBundle resource;
 
-    public EntityOptionsPanel(UserPreferences preferences, Entity entity) {
+    public EntityOptionsPanel(UserPreferences preferences, Entity entity, Controller controller) {
         super(new GridBagLayout());
         this.entity = entity;
+        this.controller = controller;
 
         resource = ResourceBundle.getBundle("com.shmuelzon.HomeAssistantFloorPlan.ApplicationPlugin", Locale.getDefault());
         createActions(preferences);
@@ -171,6 +178,25 @@ public class EntityOptionsPanel extends JPanel {
             public void executeUpdate(DocumentEvent e) {
                 entity.setAdditionalEntities(additionalEntitiesTextField.getText());
                 markModified();
+            }
+        });
+
+        selectedEntitiesLabel = new JLabel();
+        selectedEntitiesLabel.setText(resource.getString("HomeAssistantFloorPlan.Panel.selectedEntitiesLabel.text"));
+        selectedEntitiesTextField = new JTextField(20);
+        selectedEntitiesTextField.setText(entity.getSelectedEntities());
+        selectedEntitiesTextField.setToolTipText(resource.getString("HomeAssistantFloorPlan.Panel.selectedEntitiesLabel.tooltip"));
+        selectedEntitiesTextField.getDocument().addDocumentListener(new SimpleDocumentListener() {
+            @Override
+            public void executeUpdate(DocumentEvent e) {
+                entity.setSelectedEntities(selectedEntitiesTextField.getText());
+                markModified();
+            }
+        });
+        loadDeviceEntitiesButton = new JButton(resource.getString("HomeAssistantFloorPlan.Panel.loadDeviceEntitiesButton.text"));
+        loadDeviceEntitiesButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent ev) {
+                loadDeviceEntities();
             }
         });
 
@@ -520,6 +546,19 @@ public class EntityOptionsPanel extends JPanel {
             GridBagConstraints.HORIZONTAL, insets, 0, 0));
         currentGridYIndex++;
 
+        /* Selected entities (device.* markers) */
+        add(selectedEntitiesLabel, new GridBagConstraints(
+            0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        selectedEntitiesLabel.setHorizontalAlignment(labelAlignment);
+        add(selectedEntitiesTextField, new GridBagConstraints(
+            1, currentGridYIndex, 3, 1, 0, 0, GridBagConstraints.LINE_START,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        add(loadDeviceEntitiesButton, new GridBagConstraints(
+            4, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.LINE_START,
+            GridBagConstraints.HORIZONTAL, insets, 0, 0));
+        currentGridYIndex++;
+
         /* Display Condition */
         add(displayConditionLabel, new GridBagConstraints(
             0, currentGridYIndex, 1, 1, 0, 0, GridBagConstraints.CENTER,
@@ -676,6 +715,34 @@ public class EntityOptionsPanel extends JPanel {
         currentGridYIndex++;
     }
 
+    private void loadDeviceEntities() {
+        loadDeviceEntitiesButton.setEnabled(false);
+        final String deviceReference = entity.getDeviceReference();
+        new SwingWorker<List<String>, Void>() {
+            @Override
+            protected List<String> doInBackground() throws Exception {
+                return controller.resolveDeviceEntityIds(deviceReference);
+            }
+            @Override
+            protected void done() {
+                loadDeviceEntitiesButton.setEnabled(true);
+                try {
+                    List<String> ids = get();
+                    if (ids.isEmpty()) {
+                        JOptionPane.showMessageDialog(EntityOptionsPanel.this,
+                            resource.getString("HomeAssistantFloorPlan.Panel.loadDeviceEntitiesButton.empty.text"));
+                        return;
+                    }
+                    selectedEntitiesTextField.setText(String.join(", ", ids));
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    JOptionPane.showMessageDialog(EntityOptionsPanel.this,
+                        resource.getString("HomeAssistantFloorPlan.Panel.loadDeviceEntitiesButton.error.text") + "\n" + cause.getMessage());
+                }
+            }
+        }.execute();
+    }
+
     private void markModified() {
         Color modifiedColor = new Color(200, 0, 0);
 
@@ -683,6 +750,7 @@ public class EntityOptionsPanel extends JPanel {
         iconOverrideLabel.setForeground(entity.isIconOverrideModified() ? modifiedColor : Color.BLACK);
         attributeLabel.setForeground(entity.isAttributeModified() ? modifiedColor : Color.BLACK);
         additionalEntitiesLabel.setForeground(entity.isAdditionalEntitiesModified() ? modifiedColor : Color.BLACK);
+        selectedEntitiesLabel.setForeground(entity.isSelectedEntitiesModified() ? modifiedColor : Color.BLACK);
         displayConditionLabel.setForeground(entity.isDisplayConditionModified() ? modifiedColor : Color.BLACK);
         tapActionLabel.setForeground(entity.isTapActionModified() ? modifiedColor : Color.BLACK);
         doubleTapActionLabel.setForeground(entity.isDoubleTapActionModified() ? modifiedColor : Color.BLACK);
@@ -698,12 +766,17 @@ public class EntityOptionsPanel extends JPanel {
     }
 
     private void showHideComponents() {
-        iconOverrideLabel.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.ICON);
-        iconOverrideTextField.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.ICON);
-        attributeLabel.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
-        attributeTextField.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
-        additionalEntitiesLabel.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
-        additionalEntitiesTextField.setVisible((Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL);
+        boolean isDeviceGroup = entity.isDeviceGroup();
+        boolean isLabel = (Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.LABEL;
+        iconOverrideLabel.setVisible(!isDeviceGroup && (Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.ICON);
+        iconOverrideTextField.setVisible(!isDeviceGroup && (Entity.DisplayType)displayTypeComboBox.getSelectedItem() == Entity.DisplayType.ICON);
+        attributeLabel.setVisible(!isDeviceGroup && isLabel);
+        attributeTextField.setVisible(!isDeviceGroup && isLabel);
+        additionalEntitiesLabel.setVisible(!isDeviceGroup && isLabel);
+        additionalEntitiesTextField.setVisible(!isDeviceGroup && isLabel);
+        selectedEntitiesLabel.setVisible(isDeviceGroup);
+        selectedEntitiesTextField.setVisible(isDeviceGroup);
+        loadDeviceEntitiesButton.setVisible(isDeviceGroup);
         tapActionValueTextField.setVisible((Entity.Action)tapActionComboBox.getSelectedItem() == Entity.Action.NAVIGATE);
         doubleTapActionValueTextField.setVisible((Entity.Action)doubleTapActionComboBox.getSelectedItem() == Entity.Action.NAVIGATE);
         holdActionValueTextField.setVisible((Entity.Action)holdActionComboBox.getSelectedItem() == Entity.Action.NAVIGATE);

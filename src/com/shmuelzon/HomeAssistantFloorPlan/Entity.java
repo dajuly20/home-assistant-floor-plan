@@ -43,6 +43,7 @@ public class Entity implements Comparable<Entity> {
     private static final String SETTING_NAME_ICON_OVERRIDE = "iconOverride";
     private static final String SETTING_NAME_ATTRIBUTE = "attribute";
     private static final String SETTING_NAME_ADDITIONAL_ENTITIES = "additionalEntities";
+    private static final String SETTING_NAME_SELECTED_ENTITIES = "selectedEntities";
     private static final String SETTING_NAME_DISPLAY_CONDITION = "displayCondition";
     private static final String SETTING_NAME_TAP_ACTION = "tapAction";
     private static final String SETTING_NAME_TAP_ACTION_VALUE = "tapActionValue";
@@ -74,6 +75,7 @@ public class Entity implements Comparable<Entity> {
     private String iconOverride;
     private String attribute;
     private String additionalEntities;
+    private String selectedEntities;
     private DisplayCondition displayCondition;
     private Action tapAction;
     private String tapActionValue;
@@ -191,6 +193,27 @@ public class Entity implements Comparable<Entity> {
 
     public boolean isAdditionalEntitiesModified() {
         return settings.get(name + "." + SETTING_NAME_ADDITIONAL_ENTITIES) != null;
+    }
+
+    public boolean isDeviceGroup() {
+        return name != null && name.startsWith("device.");
+    }
+
+    public String getDeviceReference() {
+        return isDeviceGroup() ? name.substring("device.".length()) : "";
+    }
+
+    public String getSelectedEntities() {
+        return selectedEntities;
+    }
+
+    public void setSelectedEntities(String selectedEntities) {
+        this.selectedEntities = selectedEntities;
+        settings.set(name + "." + SETTING_NAME_SELECTED_ENTITIES, selectedEntities.isEmpty() ? null : selectedEntities);
+    }
+
+    public boolean isSelectedEntitiesModified() {
+        return settings.get(name + "." + SETTING_NAME_SELECTED_ENTITIES) != null;
     }
 
     public DisplayCondition getDisplayCondition() {
@@ -445,6 +468,7 @@ public class Entity implements Comparable<Entity> {
         settings.set(name + "." + SETTING_NAME_ICON_OVERRIDE, null);
         settings.set(name + "." + SETTING_NAME_ATTRIBUTE, null);
         settings.set(name + "." + SETTING_NAME_ADDITIONAL_ENTITIES, null);
+        settings.set(name + "." + SETTING_NAME_SELECTED_ENTITIES, null);
         settings.set(name + "." + SETTING_NAME_DISPLAY_CONDITION, null);
         settings.set(name + "." + SETTING_NAME_TAP_ACTION, null);
         settings.set(name + "." + SETTING_NAME_TAP_ACTION_VALUE, null);
@@ -544,12 +568,23 @@ public class Entity implements Comparable<Entity> {
         if (displayCondition == Entity.DisplayCondition.NEVER || getAlwaysOn())
             return "";
 
+        boolean deviceGroup = name.startsWith("device.");
         boolean combineIntoOneOval = displayType == DisplayType.LABEL
             && additionalEntities != null && !additionalEntities.trim().isEmpty();
 
+        String conditionEntity = name;
         String yaml;
-        if (combineIntoOneOval) {
-            yaml = buildCombinedLabelYaml();
+        if (deviceGroup) {
+            List<String[]> lines = parseEntityTokens(selectedEntities);
+            if (lines.isEmpty())
+                return "";
+            conditionEntity = lines.get(0)[0];
+            yaml = buildOvalYaml(lines);
+        } else if (combineIntoOneOval) {
+            List<String[]> lines = new ArrayList<>();
+            lines.add(new String[] {name, attribute});
+            lines.addAll(parseEntityTokens(additionalEntities));
+            yaml = buildOvalYaml(lines);
         } else {
             String additionalYaml = "";
             if (displayType == DisplayType.ICON && ! iconOverride.isEmpty())
@@ -582,8 +617,30 @@ public class Entity implements Comparable<Entity> {
             "        %s\n" +
             "    elements:\n" +
             "%s",
-            name, state_condition, yaml.replaceAll(".*\\R", "    $0")
+            conditionEntity, state_condition, yaml.replaceAll(".*\\R", "    $0")
         );
+    }
+
+    /* Parses a comma-separated list of "entity_id" or "entity_id|attribute" tokens. */
+    private List<String[]> parseEntityTokens(String csv) {
+        List<String[]> tokens = new ArrayList<>();
+        if (csv == null)
+            return tokens;
+        for (String token : csv.split(",")) {
+            token = token.trim();
+            if (token.isEmpty())
+                continue;
+            String entityId = token;
+            String attr = "";
+            int separatorIndex = token.indexOf('|');
+            if (separatorIndex >= 0) {
+                entityId = token.substring(0, separatorIndex).trim();
+                attr = token.substring(separatorIndex + 1).trim();
+            }
+            if (!entityId.isEmpty())
+                tokens.add(new String[] {entityId, attr});
+        }
+        return tokens;
     }
 
     private String buildElementYaml(String elementType, String entityId, String elementTitle, String extraYaml, double top, double left) {
@@ -610,28 +667,10 @@ public class Entity implements Comparable<Entity> {
             actionYaml(tapAction, tapActionValue), actionYaml(doubleTapAction, doubleTapActionValue), actionYaml(holdAction, holdActionValue));
     }
 
-    /* Renders this entity plus every entry from the "additional entities" field as one visual
-     * oval: the primary state-label carries the background pill (with extra bottom padding to
-     * cover the stacked lines), the extra state-labels sit transparently below it, one per line.
-     * Each extra token is an entity id, optionally suffixed with "|attribute". */
-    private String buildCombinedLabelYaml() {
-        List<String[]> lines = new ArrayList<>(); /* [entityId, attribute] */
-        lines.add(new String[] {name, attribute});
-        for (String token : additionalEntities.split(",")) {
-            token = token.trim();
-            if (token.isEmpty())
-                continue;
-            String extraEntityId = token;
-            String extraAttribute = "";
-            int separatorIndex = token.indexOf('|');
-            if (separatorIndex >= 0) {
-                extraEntityId = token.substring(0, separatorIndex).trim();
-                extraAttribute = token.substring(separatorIndex + 1).trim();
-            }
-            if (!extraEntityId.isEmpty())
-                lines.add(new String[] {extraEntityId, extraAttribute});
-        }
-
+    /* Renders one or more entities as a single visual oval: the first state-label carries the
+     * background pill (with extra bottom padding to cover the stacked lines), the rest sit
+     * transparently below it, one value per line. lines entries are [entityId, attribute]. */
+    private String buildOvalYaml(List<String[]> lines) {
         int extraLines = lines.size() - 1;
         double pillBottomPaddingEm = 0.15 + extraLines * 1.5;
 
@@ -728,6 +767,7 @@ public class Entity implements Comparable<Entity> {
         iconOverride = settings.get(name + "." + SETTING_NAME_ICON_OVERRIDE, "");
         attribute = settings.get(name + "." + SETTING_NAME_ATTRIBUTE, "");
         additionalEntities = settings.get(name + "." + SETTING_NAME_ADDITIONAL_ENTITIES, "");
+        selectedEntities = settings.get(name + "." + SETTING_NAME_SELECTED_ENTITIES, "");
         displayCondition = getSavedEnumValue(DisplayCondition.class, name + "." + SETTING_NAME_DISPLAY_CONDITION, DisplayCondition.ALWAYS);
         tapAction = getSavedEnumValue(Action.class, name + "." + SETTING_NAME_TAP_ACTION, defaultAction());
         tapActionValue = settings.get(name + "." + SETTING_NAME_TAP_ACTION_VALUE, "");
@@ -766,7 +806,7 @@ public class Entity implements Comparable<Entity> {
     }
 
     private DisplayType defaultDisplayType() {
-        return (name.startsWith("sensor.") || name.startsWith("person.")) ? DisplayType.LABEL : DisplayType.ICON;
+        return (name.startsWith("sensor.") || name.startsWith("person.") || name.startsWith("device.")) ? DisplayType.LABEL : DisplayType.ICON;
     }
 
     public int compareTo(Entity other) {
