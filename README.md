@@ -304,6 +304,8 @@ Instead of naming a furniture piece after a single entity, you can name it after
 
 Requires a working [Home Assistant connection](#home-assistant-connection) (URL + token). If `/api/template` is unavailable you can still type the entity IDs into the field manually.
 
+After **Fetch entities**, HA devices are pulled too (via `/api/template`) and listed as `device.<name>` in the **Select entities** dialog under the `device` group, and offered as **Did you mean?** rename suggestions for furniture — same as normal entities. You still create and name the furniture piece yourself in Sweet Home 3D.
+
 ### YAML Example
 
 A temperature sensor with default settings generates:

@@ -427,6 +427,16 @@ public class Controller {
             entityIds.add(matcher.group(1));
 
         Collections.sort(entityIds);
+
+        /* Devices are not states, so pull them separately and expose them as "device.<name>"
+         * pseudo entities so they show up in the picker and name matching like everything else. */
+        try {
+            for (String deviceName : fetchDeviceNamesFromHomeAssistant())
+                entityIds.add("device." + deviceName);
+        } catch (IOException e) {
+            /* /api/template may be disabled - devices are optional, keep the state entities */
+        }
+
         cachedHaEntityIds = entityIds;
         saveEntityCache(entityIds);
         return entityIds;
@@ -465,6 +475,27 @@ public class Controller {
         if (responseCode != 200)
             throw new IOException("Home Assistant /api/template returned HTTP " + responseCode + ": " + response.toString().trim());
         return response.toString().trim();
+    }
+
+    /* Lists the names (name_by_user, else name) of every device that has at least one entity. */
+    public List<String> fetchDeviceNamesFromHomeAssistant() throws IOException {
+        String template =
+            "{% set ns = namespace(names=[]) %}" +
+            "{% for s in states %}" +
+            "{% set d = device_id(s.entity_id) %}" +
+            "{% if d %}{% set n = device_attr(d, 'name_by_user') or device_attr(d, 'name') %}" +
+            "{% if n and n not in ns.names %}{% set ns.names = ns.names + [n] %}{% endif %}{% endif %}" +
+            "{% endfor %}" +
+            "{{ ns.names | join('|') }}";
+        List<String> names = new ArrayList<>();
+        String result = evaluateTemplate(template);
+        for (String name : result.split("\\|")) {
+            name = name.trim();
+            if (!name.isEmpty() && !names.contains(name))
+                names.add(name);
+        }
+        Collections.sort(names);
+        return names;
     }
 
     /* Resolves a device - given by its device id or its (user) name - to the entity ids that belong to it. */
