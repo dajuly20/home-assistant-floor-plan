@@ -126,6 +126,49 @@ selbst und zeigt die passende(n) an.
 **Contra**: hängt an `/api/template`; Heuristik „welche Entity ist die Hauptanzeige"
 ist nicht immer eindeutig; WebSocket wäre der „richtige" Weg, aber großer Umbau.
 
+### Option E — Plugin GENERIERT den Template-Helfer  ·  Status: Favorit, nicht umgesetzt
+
+Kombiniert das Beste aus B (echtes Oval, Slash) und D (nichts abtippen):
+Der User pflegt **keine** Entity-Namen und **keine** Jinja – das Plugin baut den
+kombinierten Sensor selbst und schreibt ihn in eine eigene YAML-Datei neben das
+Dashboard-YAML.
+
+**Ablauf beim Generieren**
+1. Möbel heißt `device.<device_id>` (oder `sensor.x_temperature`, dann
+   `device_id('sensor.x_temperature')` per `/api/template`).
+2. `POST /api/template` mit
+   `{{ expand(device_entities('<id>')) | selectattr('attributes.device_class','in',['temperature','humidity','carbon_dioxide']) | map(attribute='entity_id') | list }}`
+   → die relevanten Entities des Geräts, nach `device_class` sortiert.
+3. Plugin erzeugt einen Block in `home_assistant_floor_plan_sensors.yaml`:
+   ```yaml
+   template:
+     - sensor:
+         - name: "Grosses Bad Klima"
+           unique_id: shfp_7d7d9509e8a710386eccecfc8d827923
+           state: >
+             {{ states('sensor.grossesbad_temphumid_temperature') }}{{ sep }}{{ states('sensor.grossesbad_temphumid_humidity') }}
+   ```
+   (Trennzeichen global konfigurierbar, Default `" / "`; optional device-basiert
+   statt fester Entity-IDs, dann self-healing bei Umbenennung.)
+4. Im Dashboard-YAML wird `sensor.grosses_bad_klima` als normales `state-label`
+   referenziert → exaktes Oval, `tap_action` etc.
+
+**Einmalige HA-Einrichtung durch den User**
+`configuration.yaml`: `template: !include home_assistant_floor_plan_sensors.yaml`
+(oder Inhalt einmal kopieren). Danach bei jedem Re-Generieren automatisch aktuell.
+
+**Offene Punkte**
+- [ ] Globale Option „kombinierte Klima-Sensoren generieren" + Trennzeichen-Feld.
+- [ ] `Controller`: `/api/template`-Helper `evaluateTemplate(String)` (REST, kein neuer Dep).
+- [ ] Gerät bestimmen: aus `device.<id>` direkt, sonst `device_id(<entity>)`.
+- [ ] `device_class`-Zuordnung (welche Entities rein, in welcher Reihenfolge).
+- [ ] Schreiben der `*_sensors.yaml` + Doku „einmal !include".
+- [ ] Fallback wenn `/api/template` 404/deaktiviert → auf Weg A zurückfallen.
+- [ ] Optional: Helfer per HA-API anlegen statt Datei (braucht WebSocket + Admin → später).
+
+**Pro**: nichts abtippen, echtes Oval + Slash, überlebt Re-Generierung, ein `!include`.
+**Contra**: braucht `/api/template`; einmaliges `!include`; Plugin schreibt eine 2. YAML-Datei.
+
 ---
 
 ## 2. Umsetzung Option C (erledigt)
