@@ -122,6 +122,7 @@ public class Controller {
     private String haUrl;
     private String haApiToken;
     private List<String> cachedHaEntityIds = new ArrayList<>();
+    private String lastDeviceFetchWarning = null;
     private Scenes scenes;
 
     private HomeController homeController;
@@ -430,11 +431,16 @@ public class Controller {
 
         /* Devices are not states, so pull them separately and expose them as "device.<name>"
          * pseudo entities so they show up in the picker and name matching like everything else. */
+        lastDeviceFetchWarning = null;
         try {
-            for (String deviceName : fetchDeviceNamesFromHomeAssistant())
+            List<String> deviceNames = fetchDeviceNamesFromHomeAssistant();
+            for (String deviceName : deviceNames)
                 entityIds.add("device." + deviceName);
+            if (deviceNames.isEmpty())
+                lastDeviceFetchWarning = "No Home Assistant devices were returned by /api/template.";
         } catch (IOException e) {
             /* /api/template may be disabled - devices are optional, keep the state entities */
+            lastDeviceFetchWarning = "Could not load devices (/api/template): " + e.getMessage();
         }
 
         cachedHaEntityIds = entityIds;
@@ -446,6 +452,10 @@ public class Controller {
         return cachedHaEntityIds;
     }
 
+    public String getLastDeviceFetchWarning() {
+        return lastDeviceFetchWarning;
+    }
+
     /* Renders a Jinja template through Home Assistant's REST API and returns the trimmed result. */
     public String evaluateTemplate(String template) throws IOException {
         String apiUrl = haUrl.replaceAll("/+$", "") + "/api/template";
@@ -454,7 +464,7 @@ public class Controller {
         connection.setRequestProperty("Authorization", "Bearer " + haApiToken);
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setConnectTimeout(5000);
-        connection.setReadTimeout(10000);
+        connection.setReadTimeout(30000);
         connection.setDoOutput(true);
 
         String body = "{\"template\": \"" + template.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"}";
@@ -477,16 +487,11 @@ public class Controller {
         return response.toString().trim();
     }
 
-    /* Lists the names (name_by_user, else name) of every device that has at least one entity. */
+    /* Lists the display names of every device that has at least one entity. */
     public List<String> fetchDeviceNamesFromHomeAssistant() throws IOException {
         String template =
-            "{% set ns = namespace(names=[]) %}" +
-            "{% for s in states %}" +
-            "{% set d = device_id(s.entity_id) %}" +
-            "{% if d %}{% set n = device_attr(d, 'name_by_user') or device_attr(d, 'name') %}" +
-            "{% if n and n not in ns.names %}{% set ns.names = ns.names + [n] %}{% endif %}{% endif %}" +
-            "{% endfor %}" +
-            "{{ ns.names | join('|') }}";
+            "{{ states | map(attribute='entity_id') | map('device_id') | reject('none') | unique "
+            + "| map('device_attr', 'name') | reject('none') | unique | list | join('|') }}";
         List<String> names = new ArrayList<>();
         String result = evaluateTemplate(template);
         for (String name : result.split("\\|")) {

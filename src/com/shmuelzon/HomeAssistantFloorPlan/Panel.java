@@ -1626,6 +1626,11 @@ public class Panel extends JPanel implements DialogView {
                     haEntityCountLabel.setText(entities.size() + " entities");
                     updateLastFetchedLabel();
                     checkEntities();
+                    if (controller.getLastDeviceFetchWarning() != null)
+                        JOptionPane.showMessageDialog(Panel.this,
+                            controller.getLastDeviceFetchWarning(),
+                            resource.getString("HomeAssistantFloorPlan.Panel.error.title"),
+                            JOptionPane.WARNING_MESSAGE);
                     if (showListAfter)
                         showEntitiesList(entities);
                 });
