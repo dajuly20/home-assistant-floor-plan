@@ -79,6 +79,41 @@ Syntax je Token:
 - `sensor.raum_humidity` – zeigt den State der Zusatz-Entity
 - `climate.raum|current_temperature` – `|attribut` zeigt ein Attribut statt des States
 
+### Option D — Gerät angeben statt einzelner Entities  ·  Status: geplant, nicht umgesetzt
+
+Idee: Möbelstück auf ein **HA-Gerät** zeigen lassen, Plugin holt dessen Entities
+selbst und zeigt die passende(n) an.
+
+**HA-Grundlagen**
+- Jedes Gerät hat eine `device_id` (Hex, steht in der URL:
+  `…/config/devices/device/7d7d9509e8a710386eccecfc8d827923`).
+- Die Zuordnung Entity → Gerät liegt in der *entity/device registry* und ist
+  **nur per WebSocket-API** abrufbar (`config/entity_registry/list`,
+  `config/device_registry/list`). Das Plugin macht aktuell nur REST → sieht keine Geräte.
+- **Workaround ohne WebSocket**: `POST /api/template` wertet Jinja aus und ist
+  mit dem Long-Lived-Token erreichbar:
+  ```
+  {"template": "{{ device_entities('7d7d9509e8a710386eccecfc8d827923') | list }}"}
+  ```
+  → `['sensor.x_temperature', 'sensor.x_humidity', 'sensor.x_battery', ...]`
+  Weitere nützliche Funktionen: `device_id('sensor.x')`, `device_attr(id,'name')`,
+  `device_attr(id,'name_by_user')`.
+
+**Möglicher Umfang**
+- [ ] Möbelname-Konvention `device.<device_id>` (analog zu `sensor.*`) erkennen.
+- [ ] In `Controller` eine `resolveDeviceEntities(deviceId)` per `/api/template` ergänzen.
+- [ ] Beim Generieren: Haupt-Entity heuristisch wählen
+      (z. B. `sensor.*` mit `device_class: temperature`), Rest als *Additional entities*.
+- [ ] „Fetch entities"-Dialog um eine Geräte-Ansicht erweitern
+      (Gerät wählen → dessen Entities anzeigen/auswählen).
+- [ ] Fallback wenn `/api/template` deaktiviert/nicht erreichbar ist.
+- [ ] Optional: statt `device_id` den (eindeutigen) Gerätenamen zulassen und
+      per Template auflösen.
+
+**Pro**: keine Entity-IDs mehr abtippen, neue Sensoren am Gerät tauchen automatisch auf.
+**Contra**: hängt an `/api/template`; Heuristik „welche Entity ist die Hauptanzeige"
+ist nicht immer eindeutig; WebSocket wäre der „richtige" Weg, aber großer Umbau.
+
 ---
 
 ## 2. Umsetzung Option C (erledigt)
