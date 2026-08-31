@@ -123,6 +123,7 @@ public class Controller {
     private String haApiToken;
     private List<String> cachedHaEntityIds = new ArrayList<>();
     private String lastDeviceFetchWarning = null;
+    private int lastDeviceCount = 0;
     private Scenes scenes;
 
     private HomeController homeController;
@@ -432,12 +433,15 @@ public class Controller {
         /* Devices are not states, so pull them separately and expose them as "device.<name>"
          * pseudo entities so they show up in the picker and name matching like everything else. */
         lastDeviceFetchWarning = null;
+        lastDeviceCount = 0;
         try {
             List<String> deviceNames = fetchDeviceNamesFromHomeAssistant();
             for (String deviceName : deviceNames)
                 entityIds.add("device." + deviceName);
+            lastDeviceCount = deviceNames.size();
             if (deviceNames.isEmpty())
-                lastDeviceFetchWarning = "No Home Assistant devices were returned by /api/template.";
+                lastDeviceFetchWarning = "No Home Assistant devices were returned by /api/template. "
+                    + "Check that the API is enabled and the token has access.";
         } catch (IOException e) {
             /* /api/template may be disabled - devices are optional, keep the state entities */
             lastDeviceFetchWarning = "Could not load devices (/api/template): " + e.getMessage();
@@ -454,6 +458,10 @@ public class Controller {
 
     public String getLastDeviceFetchWarning() {
         return lastDeviceFetchWarning;
+    }
+
+    public int getLastDeviceCount() {
+        return lastDeviceCount;
     }
 
     /* Renders a Jinja template through Home Assistant's REST API and returns the trimmed result. */
@@ -487,14 +495,21 @@ public class Controller {
         return response.toString().trim();
     }
 
-    /* Lists the display names of every device that has at least one entity. */
+    /* Lists the display names of every device that has at least one entity.
+     * Uses an explicit loop with piped filters (device_id/device_attr are context
+     * filters and can misbehave inside map('...')). */
     public List<String> fetchDeviceNamesFromHomeAssistant() throws IOException {
         String template =
-            "{{ states | map(attribute='entity_id') | map('device_id') | reject('none') | unique "
-            + "| map('device_attr', 'name') | reject('none') | unique | list | join('|') }}";
+            "{% set ns = namespace(names=[]) %}" +
+            "{% for eid in states | map(attribute='entity_id') | list %}" +
+            "{% set d = eid | device_id %}" +
+            "{% if d %}{% set n = d | device_attr('name_by_user') or d | device_attr('name') %}" +
+            "{% if n and n not in ns.names %}{% set ns.names = ns.names + [n] %}{% endif %}{% endif %}" +
+            "{% endfor %}" +
+            "{{ ns.names | join('\\n') }}";
         List<String> names = new ArrayList<>();
         String result = evaluateTemplate(template);
-        for (String name : result.split("\\|")) {
+        for (String name : result.split("\\r?\\n")) {
             name = name.trim();
             if (!name.isEmpty() && !names.contains(name))
                 names.add(name);
@@ -534,7 +549,8 @@ public class Controller {
             .filter(id -> {
                 int dot = id.indexOf('.');
                 String domain = dot >= 0 ? id.substring(0, dot) : id;
-                return sh3dDomains.contains(domain);
+                /* always keep devices - they are not tied to a state domain the user placed */
+                return domain.equals("device") || sh3dDomains.contains(domain);
             })
             .collect(Collectors.toList());
     }
@@ -544,15 +560,18 @@ public class Controller {
     private long haEntityCacheTime = 0;
 
     private void saveEntityCache(List<String> entityIds) {
-        settings.set(CONTROLLER_HA_ENTITY_CACHE, String.join(",", entityIds));
+        /* newline-separated: device.<name> pseudo entries may contain commas/spaces */
+        settings.set(CONTROLLER_HA_ENTITY_CACHE, String.join("\n", entityIds));
         haEntityCacheTime = System.currentTimeMillis();
         settings.setLong(CONTROLLER_HA_ENTITY_CACHE_TIME, haEntityCacheTime);
     }
 
     private void loadEntityCache() {
         String cached = settings.get(CONTROLLER_HA_ENTITY_CACHE, "");
-        if (!cached.isEmpty())
-            cachedHaEntityIds = new ArrayList<>(Arrays.asList(cached.split(",")));
+        if (!cached.isEmpty()) {
+            String separator = cached.contains("\n") ? "\\r?\\n" : ",";
+            cachedHaEntityIds = new ArrayList<>(Arrays.asList(cached.split(separator)));
+        }
         haEntityCacheTime = settings.getLong(CONTROLLER_HA_ENTITY_CACHE_TIME, 0);
     }
 
