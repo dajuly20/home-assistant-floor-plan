@@ -280,13 +280,17 @@ The Attribute field is only visible in the entity options panel when Display Typ
 
 ### The Additional Entities Field
 
-To show more than one value at the same spot — e.g. temperature **and** humidity — use the **Additional entities** field (only visible when Display Type is **Label**). Enter a comma-separated list of entity IDs; each one is rendered as its own `state-label`, stacked underneath the primary label (offset 3% downward per line). They inherit the primary marker's position, style, actions and display condition.
+To show more than one value at the same spot — e.g. temperature **and** humidity — use the **Additional entities** field (only visible when Display Type is **Label**). Enter a comma-separated list of entity IDs. All values are rendered into **one oval**, one value per line: the primary `state-label` carries the background pill (with extra bottom padding), the extra `state-label`s sit transparently below it (3% offset per line). They inherit the primary marker's position, style, actions and display condition.
+
+> HA's `picture-elements` `state-label` can only show a single entity's state and has no template support, so a real one-line "23.3 / 57" needs a combined [template sensor / helper](#sensors--temperature-display) in Home Assistant. The Additional entities field is the closest pure-plugin approximation (stacked lines inside one pill).
 
 | Example | Result |
 | ------- | ------ |
-| `sensor.humidity_living_room` | Primary temperature label, humidity label below it |
-| `sensor.humidity_living_room, sensor.co2_living_room` | Two extra labels stacked below |
+| `sensor.humidity_living_room` | Temperature on the first line, humidity on the second, one pill |
+| `sensor.humidity_living_room, sensor.co2_living_room` | Three lines in one pill |
 | `climate.living_room\|current_temperature` | Append `\|attribute` to show an attribute of the extra entity instead of its state |
+
+Because line spacing is a fixed percentage and the pill height is estimated from the line count, you may need to fine-tune `scale` / `position` after generating.
 
 ### YAML Example
 

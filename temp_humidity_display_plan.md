@@ -68,16 +68,28 @@ sie leicht auseinander).
 - **Pro**: null Aufwand im Code.
 - **Contra**: zwei Marker-Objekte in Sweet Home 3D pflegen/positionieren, Optik "zwei Punkte".
 
-### Option C — Plugin-Feature „Additional entities"  ·  Status: ✅ IMPLEMENTIERT (Commit `2acbb37`)
+### Option C — Plugin-Feld „Additional entities"  ·  Status: ✅ implementiert, 2× überarbeitet
 
-Neues Feld in den Entity-Optionen (nur sichtbar bei Display type = **Label**):
-kommagetrennte Liste weiterer Entity-IDs. Jede wird als eigenes `state-label`
-**unter** dem Haupt-Label gestapelt (3 % Versatz pro Zeile), erbt Position,
-Style, Aktionen und Display-Condition des Haupt-Markers.
-
-Syntax je Token:
-- `sensor.raum_humidity` – zeigt den State der Zusatz-Entity
+Feld in den Entity-Optionen (nur bei Display type = **Label**): kommagetrennte
+Liste weiterer Entity-IDs. Syntax je Token:
+- `sensor.raum_humidity` – State der Zusatz-Entity
 - `climate.raum|current_temperature` – `|attribut` zeigt ein Attribut statt des States
+
+**Verlauf:**
+1. `2acbb37` – jede Zusatz-Entity als eigenes `state-label` mit eigenem Hintergrund
+   → **zwei getrennte Kreise**, vom User verworfen.
+2. Idee „ein `markdown`-Element mit `{{ states(a) }} / {{ states(b) }}`" → **verworfen**:
+   `picture-elements` erlaubt kein `markdown`/Karten-Element (nur state-badge/-icon/-label,
+   icon, image, conditional, `custom:*`). `state-label` kann nur EINEN State, kein Template.
+3. **Aktuell (`before-one-oval` → nächster Commit):** alle Werte in **einem Oval**,
+   eine Zeile pro Wert. Das primäre `state-label` trägt die Hintergrund-Pille
+   (`border-radius: 16px`, `padding` unten = `0.15 + n*1.5em`), die Zusatz-Labels
+   sitzen transparent 3 % tiefer. Kein Slash – ohne HA-Helfer ist eine echte
+   einzeilige Kombi nicht möglich.
+
+**Bekannte Schwächen von 3:** Pillenhöhe ist geschätzt (Zeilenanzahl), Zeilenabstand
+fix in %, breitester Wert kann aus der Pille ragen → ggf. `scale`/`position` nachjustieren.
+Rollback-Tag: `before-one-oval`.
 
 ### Option D — Gerät angeben statt einzelner Entities  ·  Status: geplant, nicht umgesetzt
 

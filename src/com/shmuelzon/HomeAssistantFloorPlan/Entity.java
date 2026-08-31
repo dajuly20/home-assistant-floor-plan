@@ -2,6 +2,7 @@ package com.shmuelzon.HomeAssistantFloorPlan;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
@@ -543,21 +544,28 @@ public class Entity implements Comparable<Entity> {
         if (displayCondition == Entity.DisplayCondition.NEVER || getAlwaysOn())
             return "";
 
-        String additionalYaml = "";
-        if (displayType == DisplayType.ICON && ! iconOverride.isEmpty())
-            additionalYaml = String.format("    icon: %s\n", iconOverride);
-        if (displayType == DisplayType.LABEL && !attribute.isEmpty())
-            additionalYaml = String.format("    attribute: %s\n", attribute);
-        if (name.startsWith("person.")) {
-            StringBuilder initials = new StringBuilder();
-            for (String word : title.split("\\s+"))
-                if (!word.isEmpty()) initials.append(Character.toUpperCase(word.charAt(0)));
-            additionalYaml += String.format("    prefix: \"👤 %s: \"\n", initials.toString());
-        }
+        boolean combineIntoOneOval = displayType == DisplayType.LABEL
+            && additionalEntities != null && !additionalEntities.trim().isEmpty();
 
-        String elementType = displayTypeToYamlString.get(displayType);
-        String yaml = buildElementYaml(elementType, name, title, additionalYaml, position.y, position.x);
-        yaml += buildAdditionalEntitiesYaml(elementType);
+        String yaml;
+        if (combineIntoOneOval) {
+            yaml = buildCombinedLabelYaml();
+        } else {
+            String additionalYaml = "";
+            if (displayType == DisplayType.ICON && ! iconOverride.isEmpty())
+                additionalYaml = String.format("    icon: %s\n", iconOverride);
+            if (displayType == DisplayType.LABEL && !attribute.isEmpty())
+                additionalYaml = String.format("    attribute: %s\n", attribute);
+            if (name.startsWith("person.")) {
+                StringBuilder initials = new StringBuilder();
+                for (String word : title.split("\\s+"))
+                    if (!word.isEmpty()) initials.append(Character.toUpperCase(word.charAt(0)));
+                additionalYaml += String.format("    prefix: \"👤 %s: \"\n", initials.toString());
+            }
+
+            String elementType = displayTypeToYamlString.get(displayType);
+            yaml = buildElementYaml(elementType, name, title, additionalYaml, position.y, position.x);
+        }
 
         if (displayCondition == DisplayCondition.ALWAYS)
             return yaml;
@@ -602,19 +610,17 @@ public class Entity implements Comparable<Entity> {
             actionYaml(tapAction, tapActionValue), actionYaml(doubleTapAction, doubleTapActionValue), actionYaml(holdAction, holdActionValue));
     }
 
-    /* Renders any extra entities configured for this marker as additional labels stacked below it.
-     * Each token is an entity id, optionally suffixed with "|attribute" to show one of its attributes. */
-    private String buildAdditionalEntitiesYaml(String elementType) {
-        if (additionalEntities == null || additionalEntities.trim().isEmpty())
-            return "";
-
-        StringBuilder result = new StringBuilder();
-        double topOffset = ADDITIONAL_ENTITY_LINE_SPACING_PERCENT;
+    /* Renders this entity plus every entry from the "additional entities" field as one visual
+     * oval: the primary state-label carries the background pill (with extra bottom padding to
+     * cover the stacked lines), the extra state-labels sit transparently below it, one per line.
+     * Each extra token is an entity id, optionally suffixed with "|attribute". */
+    private String buildCombinedLabelYaml() {
+        List<String[]> lines = new ArrayList<>(); /* [entityId, attribute] */
+        lines.add(new String[] {name, attribute});
         for (String token : additionalEntities.split(",")) {
             token = token.trim();
             if (token.isEmpty())
                 continue;
-
             String extraEntityId = token;
             String extraAttribute = "";
             int separatorIndex = token.indexOf('|');
@@ -622,12 +628,51 @@ public class Entity implements Comparable<Entity> {
                 extraEntityId = token.substring(0, separatorIndex).trim();
                 extraAttribute = token.substring(separatorIndex + 1).trim();
             }
-            if (extraEntityId.isEmpty())
-                continue;
+            if (!extraEntityId.isEmpty())
+                lines.add(new String[] {extraEntityId, extraAttribute});
+        }
 
-            String extraYaml = extraAttribute.isEmpty() ? "" : String.format("    attribute: %s\n", extraAttribute);
-            result.append(buildElementYaml(elementType, extraEntityId, extraEntityId, extraYaml, position.y + topOffset, position.x));
-            topOffset += ADDITIONAL_ENTITY_LINE_SPACING_PERCENT;
+        int extraLines = lines.size() - 1;
+        double pillBottomPaddingEm = 0.15 + extraLines * 1.5;
+
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < lines.size(); i++) {
+            String entityId = lines.get(i)[0];
+            String lineAttribute = lines.get(i)[1];
+            String attributeYaml = (lineAttribute == null || lineAttribute.isEmpty()) ?
+                "" : String.format("    attribute: %s\n", lineAttribute);
+            boolean isPrimary = i == 0;
+            String pillYaml = isPrimary ?
+                String.format(Locale.US,
+                    "      border-radius: 16px\n" +
+                    "      padding: 3px 10px %.2fem\n" +
+                    "      background-color: %s\n", pillBottomPaddingEm, backgroundColor) :
+                "      background-color: transparent\n";
+
+            result.append(String.format(Locale.US,
+                "  - type: state-label\n" +
+                "    entity: %s\n" +
+                "    title: %s\n" +
+                "%s" +
+                "    style:\n" +
+                "      top: %.2f%%\n" +
+                "      left: %.2f%%\n" +
+                "      text-align: center\n" +
+                "      white-space: nowrap\n" +
+                "      line-height: 1.4\n" +
+                "%s" +
+                "      opacity: %d%%\n" +
+                "      transform: translate(-50%%, -50%%) scale(%d%%)\n" +
+                "    tap_action:\n" +
+                "      action: %s\n" +
+                "    double_tap_action:\n" +
+                "      action: %s\n" +
+                "    hold_action:\n" +
+                "      action: %s\n",
+                entityId, isPrimary ? title : entityId, attributeYaml,
+                position.y + i * ADDITIONAL_ENTITY_LINE_SPACING_PERCENT, position.x, pillYaml,
+                opacity, scale,
+                actionYaml(tapAction, tapActionValue), actionYaml(doubleTapAction, doubleTapActionValue), actionYaml(holdAction, holdActionValue)));
         }
         return result.toString();
     }
