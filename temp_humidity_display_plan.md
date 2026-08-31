@@ -231,3 +231,69 @@ Bei Display-Condition ≠ Always werden alle Elemente gemeinsam in den
 - [ ] **UI**: bei vielen Zusatz-Entities ist ein einzeiliges Textfeld eng –
       evtl. mehrzeilig oder Liste mit +/–.
 - [ ] Screenshot in `doc/` aktualisieren (`entityOptionsFurniture.png` zeigt das neue Feld noch nicht).
+
+---
+
+## 4. OFFENER BUG: `device`-Gruppe erscheint nicht im Picker
+
+**Stand 2026-08-31, ~12:40** — Commits `133e5cc` + `83c9046` eingespielt, „Fetch entities"
+neu geklickt (Last fetch 12:36:12), Entity-Count 3741 → 3743. Trotzdem **keine
+`device`-Gruppe** im rechten Baum „Available in Home Assistant", **kein Fehler-Popup**.
+
+### Was gebaut wurde (Ist-Zustand im Code)
+
+- `Controller.fetchDeviceNamesFromHomeAssistant()` — Template
+  `{{ states | map(attribute='entity_id') | map('device_id') | reject('none') | unique | map('device_attr','name') | reject('none') | unique | list | join('|') }}`
+- `fetchEntitiesFromHomeAssistant()` hängt `"device." + name` an `entityIds` an,
+  setzt `lastDeviceFetchWarning` bei Exception **oder leerer Liste**.
+- `Panel.triggerFetchEntities()` zeigt `getLastDeviceFetchWarning()` als Popup.
+- `isHomeAssistantEntity()` kennt `device.`; `SUPPORTED_DOMAINS` enthält `device`.
+- `EntityOptionsPanel`: „Entities"-Feld + „Load from HA" (`resolveDeviceEntityIds()`).
+
+### Hypothesen (in Reihenfolge prüfen)
+
+1. **Kein Popup + Count +2 ⇒ `fetchDeviceNamesFromHomeAssistant()` warf keine Exception
+   und lieferte nicht-leer?** Dann müssten `device.*` in `cachedHaEntityIds` sein und
+   der rechte Baum eine `device`-Gruppe zeigen. Tut er nicht → Verdacht auf
+   **rechten Baum-Builder** (`populateHaEntitiesTree` ~Panel.java:1300 ff.):
+   filtert er Domains gegen eine Whitelist? Accordion-Mode? → *zuerst hier gucken*.
+2. **`map('device_id')` / `map('device_attr','name')` funktioniert nicht in `/api/template`.**
+   `map` ruft Jinja-Filter; HA-eigene Filter sind evtl. nicht über `map` erreichbar.
+   → In **Entwicklerwerkzeuge → Vorlagen** exakt dieses Template testen. Falls Fehler:
+   auf `namespace`-Schleife über `states` zurück, ABER Timeout war das Problem →
+   Schleife auf wenige Domains begrenzen (`states.sensor` + `states.binary_sensor` …)
+   oder `device_attr` weglassen und nur `device_id`s sammeln, Namen einzeln per
+   zweitem Call.
+3. **Popup wurde angezeigt, aber vom User übersehen** (unwahrscheinlich, aber:
+   Popup-Text ggf. in `checkEntities()`-Dialog untergegangen). → Warnung zusätzlich
+   in ein sichtbares Label neben „Last fetch" schreiben.
+4. **Cache-Persistenz zerlegt Gerätenamen**: `saveEntityCache`/`loadEntityCache`
+   join/split auf `,` (Controller.java:~519). Gerätename mit `,` („Kitchen, Nook")
+   → zersplittert. Eher `\n`-getrennt speichern oder Namen bereinigen.
+5. **Der User lief doch auf altem Build.** → Versionslabel/Log beim Start ausgeben
+   (`Plugin` Version in Titel oder Konsole), damit das eindeutig ist.
+6. **Rechter Baum wird nach dem Fetch nicht neu aufgebaut**, nur `haEntityCountLabel`.
+   → prüfen ob `populateHaEntitiesTree()` in `triggerFetchEntities`-Erfolgspfad
+   aufgerufen wird (aktuell: `checkEntities()` — reicht das?).
+
+### Wichtiger Nebenpfad — zuerst verifizieren
+
+Die `device`-Gruppe im Picker ist nur **Komfort/Discovery**. Der eigentliche Pfad ist:
+Möbel `device.<Name>` → Optionen → **„Load from HA"** (`resolveDeviceEntityIds`).
+**Als Erstes testen ob DIESER Button funktioniert**, unabhängig vom Picker:
+- Möbel `device.KleinesBad_TempHumid` benennen (exakter Gerätename!)
+- Optionen öffnen, „Load from HA" klicken
+- Erwartung: Feld füllt sich mit `sensor.temphumidkleinesbad_temperature, …`
+- Fehler-Popup? Text notieren.
+
+### Umsetzungsplan (wenn wieder Tokens da sind)
+
+1. Template 2 in Dev-Tools verifizieren; ggf. robustes Fallback-Template festzurren.
+2. `resolveDeviceEntityIds` (Load-from-HA-Button) end-to-end testen — das ist der
+   kritische Pfad, muss zuerst grün sein.
+3. Rechten Baum-Builder prüfen: wird `device`-Domain gerendert? Fetch → Rebuild?
+4. Cache-Persistenz auf `\n`-Trennung umstellen (Namen können `,`/Leerzeichen haben).
+5. Sichtbares Status-/Warnlabel statt/zusätzlich zum Popup.
+6. Erst dann: echte Checkbox-Liste im Options-Dialog statt Textfeld.
+
+Rollback-Tag für den ganzen device-Zweig: `before-device-groups`.
