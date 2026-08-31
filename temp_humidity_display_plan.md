@@ -297,3 +297,22 @@ Möbel `device.<Name>` → Optionen → **„Load from HA"** (`resolveDeviceEnti
 6. Erst dann: echte Checkbox-Liste im Options-Dialog statt Textfeld.
 
 Rollback-Tag für den ganzen device-Zweig: `before-device-groups`.
+
+### ✅ Bearbeitet in `567f352` (2026-08-31)
+
+- **Ursache 3+6 gefunden:** `checkEntities()` (rechter Baum) nutzt
+  `getHaSelectedEntityIds()`, das `cachedHaEntityIds` auf die Domains
+  **filtert, die der User schon als Möbel hat**. Ohne `device.*`-Möbel →
+  keine `device`-Gruppe. → jetzt: `device` wird immer durchgelassen.
+- **Punkt 1:** Template auf expliziten Loop mit **Pipe-Filtern**
+  (`eid | device_id | device_attr('name')`) umgestellt — `map('device_id')`
+  ist ein Kontext-Filter und bricht in `map()`.
+- **Punkt 4:** Entity-Cache jetzt `\n`-getrennt (alte `,`-Caches laden weiter).
+- **Punkt 5:** Fetch-Label zeigt `"<n> entities, <m> devices"`; Popup bei 0 Geräten.
+
+**Noch zu verifizieren (nächste Runde):**
+- „Load from HA"-Button (`resolveDeviceEntityIds`) end-to-end mit echtem HA.
+- Ob `m devices` > 0 anzeigt und die `device`-Gruppe im rechten Baum + im
+  „Select entities"-Dialog erscheint.
+- Wenn 0/Fehler: Popup-Text bringt die Ursache (`/api/template` HTTP-Code).
+- Danach: echte Checkbox-Liste im Options-Dialog.
